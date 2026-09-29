@@ -1,9 +1,13 @@
 # Netlify build configuration for skycreation.dev
 # Free tier only. No build step - the site is hand-written HTML/CSS/JS.
 #
-# While the full site is still being finished, `maintenance/` is published and
-# every address redirects to the founder's portfolio. To bring the full site
-# back, change publish below to "site" and delete the redirect block.
+# While the full site is still being finished, only the "coming soon" page in
+# maintenance/ is published. The contact function in site/functions is still
+# deployed so the mail path is live and testable, and every other address
+# redirects to the founder's portfolio.
+#
+# To publish the finished site instead, change publish below to "site" and
+# delete the redirect block.
 #
 #   publish = "maintenance"   <- what is live now
 #   publish = "site"          <- the finished site
@@ -14,6 +18,15 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# --- Contact form -> Netlify Function -> Brevo ---------------------------
+# Kept live while the rest of the site waits. The maintenance page has no
+# form, but the endpoint stays reachable and correctly configured.
+
+[[redirects]]
+  from = "/api/contact"
+  to = "/.netlify/functions/contact"
+  status = 200
 
 # --- Everything else goes to the founder's portfolio ----------------------
 # Netlify serves files in the publish directory before applying redirects, so

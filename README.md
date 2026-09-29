@@ -52,6 +52,24 @@ and delete the `[[redirects]]` block in the same file. The redirect rules
 currently sit after the publish setting, so a stale copy is harmless, but
 removing it keeps the config honest.
 
+The contact function stays deployed either way, so the mail path is live and
+testable while the rest of the site waits. The maintenance page has no form,
+so `/api/contact` is reachable but nothing on the page submits to it.
+
+### Deploying from the CLI
+
+`--dir` overrides `[build] publish`. Passing the repository root uploads the
+whole tree and the site 404s at `/`, because there is no `index.html` at the
+top level. Point `--dir` at the directory you actually want published:
+
+```sh
+netlify deploy --dir=maintenance --prod     # the coming-soon page
+netlify deploy --dir=site --prod            # the finished site
+```
+
+The functions directory still comes from `netlify.toml`, so the contact
+function is deployed with either command.
+
 ## Deploy
 
 1. Create the GitHub repository and push this tree.
@@ -69,10 +87,29 @@ removing it keeps the config honest.
    function uses `CONTACT_TO`, so make sure whichever address is used has been
    verified in Brevo or delivery will fail.
 
+   These are set on the live site already. Setting them via the API needs the
+   account endpoint with the site passed as a query parameter, and the body as
+   an array of key/values objects:
+
+   ```sh
+   POST /api/v1/accounts/{account_id}/env?site_id={site_id}
+   [{"key":"BREVO_API_KEY","values":[{"context":"all","value":"..."}]}]
+   ```
+
+   Leave `is_secret` off on a free plan. A secret may not run in the
+   `post_processing` scope, and restricting it to `functions` requires Pro, so
+   the two rules together leave no way to store a secret. The key is still
+   server-side: the function reads it from the environment and it is never
+   bundled into the deployed site.
+
 4. In Brevo, verify the sending domain so DKIM is signed.
 5. In Netlify **Domain settings**, add `skycreation.dev`. Netlify then shows the
    exact apex and `www` records it needs — copy those values into Spaceship
    rather than guessing them, because Netlify's apex record differs by setup.
+
+   Done: apex `A @` → `75.2.60.5`, `CNAME www` → `sky-creation.netlify.app`.
+   Keep the existing Spaceship MX/SPF, Brevo DKIM/DMARC, and `founder` CNAME
+   records.
 
 ## DNS monitoring
 
