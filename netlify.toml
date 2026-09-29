@@ -1,0 +1,40 @@
+# Netlify build configuration for skycreation.dev
+# Deploy type: static site + one serverless function (contact form).
+# Free tier only. No build step - the site is hand-written HTML/CSS/JS.
+
+[build]
+  publish = "site"
+  functions = "site/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# --- Contact form -> Netlify Function -> Brevo ---------------------------
+
+[[redirects]]
+  from = "/api/contact"
+  to = "/.netlify/functions/contact"
+  status = 200
+
+# --- Headers --------------------------------------------------------------
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=(), interest-cohort=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+# Fingerprinted assets are not fingerprinted, so keep caching conservative.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+# HTML should always revalidate so a deploy is visible immediately.
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

@@ -1,0 +1,32 @@
+name: Bug or content report
+description: Report a problem with the skycreation.dev website.
+labels: [needs-triage]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: page
+    attributes:
+      label: Page
+      placeholder: https://skycreation.dev/work.html
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Type
+      options:
+        - Broken link
+        - Text or typo
+        - Layout or mobile
+        - Contact form
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else

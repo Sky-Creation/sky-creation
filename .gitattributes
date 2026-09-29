@@ -1,0 +1,10 @@
+# Normalise line endings so deployed files match what is committed.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary

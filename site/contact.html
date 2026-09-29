@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact — Sky Creation Innovations</title>
+<meta name="description" content="Get in touch with Sky Creation Innovations about a software project.">
+<link rel="canonical" href="https://skycreation.dev/contact.html">
+<meta name="theme-color" content="#0b1220">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <a class="brand" href="index.html">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">Sky Creation<em>Innovations</em></span>
+  </a>
+  <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+  <nav class="site-nav" id="site-nav" aria-label="Main">
+    <a href="work.html">Work</a>
+    <a href="about.html">About</a>
+    <a href="math.html">Math</a>
+    <a href="contact.html" aria-current="page">Contact</a>
+  </nav>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <p class="eyebrow">Contact</p>
+    <h1>Tell us what you<br>need built.</h1>
+    <p class="lede">
+      Tell us about the project and we will reply within one business day. If the
+      form does not work, email us directly at
+      <a href="mailto:contact@skycreation.dev">contact@skycreation.dev</a>.
+    </p>
+  </section>
+
+  <section class="section" id="form">
+    <div class="form">
+      <form class="form" data-contact-form novalidate>
+        <div class="field">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" autocomplete="name" maxlength="120" required>
+        </div>
+
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" autocomplete="email" maxlength="200" required>
+          <span class="field-hint">We only use this to reply to you.</span>
+        </div>
+
+        <div class="field">
+          <label for="subject">Subject <span class="muted">(optional)</span></label>
+          <input type="text" id="subject" name="subject" maxlength="150">
+        </div>
+
+        <div class="field">
+          <label for="message">Message</label>
+          <textarea id="message" name="message" maxlength="4000" required></textarea>
+        </div>
+
+        <!-- Honeypot: hidden from people, attractive to naive bots. -->
+        <div class="field-hp" aria-hidden="true">
+          <label for="company">Company</label>
+          <input type="text" id="company" name="company" tabindex="-1" autocomplete="off">
+        </div>
+
+        <button class="btn btn-primary" type="submit">Send message</button>
+        <p class="form-status" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="elsewhere">
+    <div class="section-head">
+      <h2>Elsewhere</h2>
+      <p>Other ways to reach us.</p>
+    </div>
+    <ul class="social-list">
+      <li>
+        <a href="mailto:contact@skycreation.dev">
+          Email
+          <span>contact@skycreation.dev</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://www.facebook.com/skycreationinnovations/" rel="noopener">
+          Facebook
+          <span>/skycreationinnovations</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://www.linkedin.com/in/waiyantunoo/" rel="noopener">
+          LinkedIn
+          <span>/in/waiyantunoo</span>
+        </a>
+      </li>
+      <li>
+        <a href="https://founder.skycreation.dev">
+          Founder portfolio
+          <span>founder.skycreation.dev</span>
+        </a>
+      </li>
+    </ul>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <p>&copy; <span data-year></span> Sky Creation Innovations</p>
+  <p><a href="https://www.facebook.com/skycreationinnovations/">Facebook</a></p>
+</footer>
+
+<script src="assets/main.js"></script>
+</body>
+</html>
