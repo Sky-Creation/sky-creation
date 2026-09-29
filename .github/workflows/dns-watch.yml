@@ -1,0 +1,50 @@
+name: DNS watch
+
+# Nightly read-only health check for skycreation.dev.
+# Authoritative DNS is the source of truth; the Spaceship API is used only to
+# cross-check the control plane. The script cannot write DNS.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:17 UTC - an off-the-hour minute, so this does not pile onto the
+    # busiest GitHub Actions slot.
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dns-watch
+  cancel-in-progress: false
+
+jobs:
+  dns-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dig
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dnsutils
+
+      - name: Check DNS
+        env:
+          DOMAIN: skycreation.dev
+        run: |
+          set +e
+          python3 infra/dns_doctor.py --domain "$DOMAIN" --no-color
+          status=$?
+          set -e
+          echo
+          echo "--- report.json ---"
+          python3 infra/dns_doctor.py --domain "$DOMAIN" --json | tee report.json
+          exit $status
+
+      - name: Cross-check the Spaceship zone
+        if: always()
+        continue-on-error: true
+        env:
+          DOMAIN: skycreation.dev
+          SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}
+          SPACESHIP_API_SECRET: ${{ secrets.SPACESHIP_API_SECRET }}
+        run: python3 infra/dns_doctor.py --domain "$DOMAIN" --no-color --control-plane

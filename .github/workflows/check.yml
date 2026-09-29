@@ -1,0 +1,52 @@
+name: Contact form
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "netlify.toml"
+  pull_request:
+    paths:
+      - "site/**"
+      - "netlify.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Syntax-check the JavaScript
+        run: |
+          set -euo pipefail
+          for file in site/assets/*.js site/functions/*.mjs; do
+            echo "checking $file"
+            node --check "$file"
+          done
+
+      - name: Verify every internal link target exists
+        run: |
+          set -euo pipefail
+          missing=0
+          for page in site/*.html; do
+            for href in $(grep -o 'href="[^"#][^"]*"' "$page" | sed 's/href="//; s/"$//'); do
+              case "$href" in
+                http*|mailto:*|"") continue ;;
+              esac
+              target="site/${href%%#*}"
+              if [ ! -e "$target" ]; then
+                echo "missing: $page -> $href"
+                missing=1
+              fi
+            done
+          done
+          exit $missing
