@@ -13,7 +13,10 @@ form, GitHub Actions for DNS monitoring, Spaceship for DNS.
 
 ```
 netlify.toml                        Netlify build config (root, so it is found)
-site/                               Published directory
+maintenance/                        Published directory while the site is being finished
+  index.html                        "Coming soon" page
+  assets/favicon.svg
+site/                               The finished site (not published yet)
   index.html                        Landing
   about.html                        Studio and founder
   work.html                         Project catalogue
@@ -21,6 +24,7 @@ site/                               Published directory
   contact.html                      Contact form
   assets/styles.css                 All styling
   assets/main.js                    Nav, footer year, contact form
+  assets/posts.js                   Facebook post lists
   assets/favicon.svg
   functions/contact.mjs             Netlify Function -> Brevo
 infra/
@@ -31,6 +35,22 @@ infra/
 ```
 
 There is no build step. Edit a file, push, Netlify redeploys.
+
+## Which site is live
+
+`netlify.toml` sets `publish = "maintenance"`, so the live site is the
+"coming soon" page and every other address redirects to
+[founder.skycreation.dev](https://founder.skycreation.dev).
+
+To publish the finished site instead, change one line:
+
+```toml
+publish = "site"
+```
+
+and delete the `[[redirects]]` block in the same file. The redirect rules
+currently sit after the publish setting, so a stale copy is harmless, but
+removing it keeps the config honest.
 
 ## Deploy
 

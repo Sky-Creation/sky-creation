@@ -1,20 +1,63 @@
 # Netlify build configuration for skycreation.dev
-# Deploy type: static site + one serverless function (contact form).
 # Free tier only. No build step - the site is hand-written HTML/CSS/JS.
+#
+# While the full site is still being finished, `maintenance/` is published and
+# every address redirects to the founder's portfolio. To bring the full site
+# back, change publish below to "site" and delete the redirect block.
+#
+#   publish = "maintenance"   <- what is live now
+#   publish = "site"          <- the finished site
 
 [build]
-  publish = "site"
+  publish = "maintenance"
   functions = "site/functions"
 
 [build.environment]
   NODE_VERSION = "22"
 
-# --- Contact form -> Netlify Function -> Brevo ---------------------------
+# --- Everything else goes to the founder's portfolio ----------------------
+# Netlify serves files in the publish directory before applying redirects, so
+# these cover the addresses the finished site will eventually use.
 
 [[redirects]]
-  from = "/api/contact"
-  to = "/.netlify/functions/contact"
-  status = 200
+  from = "/about"
+  to = "https://founder.skycreation.dev"
+  status = 302
+
+[[redirects]]
+  from = "/work"
+  to = "https://founder.skycreation.dev"
+  status = 302
+
+[[redirects]]
+  from = "/math"
+  to = "https://founder.skycreation.dev"
+  status = 302
+
+[[redirects]]
+  from = "/contact"
+  to = "https://founder.skycreation.dev"
+  status = 302
+
+[[redirects]]
+  from = "/about.html"
+  to = "https://founder.skycreation.dev"
+  status = 302
+
+[[redirects]]
+  from = "/work.html"
+  to = "https://founder.skycreation.dev"
+  status = 302
+
+[[redirects]]
+  from = "/math.html"
+  to = "https://founder.skycreation.dev"
+  status = 302
+
+[[redirects]]
+  from = "/contact.html"
+  to = "https://founder.skycreation.dev"
+  status = 302
 
 # --- Headers --------------------------------------------------------------
 

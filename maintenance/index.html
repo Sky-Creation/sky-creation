@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sky Creation Innovations — coming soon</title>
+<meta name="description" content="Sky Creation Innovations is preparing a new website. In the meantime, visit the founder's portfolio.">
+<meta name="robots" content="noindex, follow">
+<meta name="theme-color" content="#0b1220">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0b1220;
+    --surface: #16233c;
+    --text: #e8eefc;
+    --muted: #9fb0cd;
+    --accent: #4da3ff;
+    --accent-2: #7ee0c0;
+    --border: rgba(255, 255, 255, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 2rem 1.5rem;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main {
+    width: 100%;
+    max-width: 34rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2.5rem 2rem;
+    text-align: center;
+  }
+
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 2rem;
+    font-weight: 600;
+  }
+
+  .mark {
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  }
+
+  .brand span em {
+    font-style: normal;
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  .badge {
+    display: inline-block;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.72rem;
+    color: var(--accent-2);
+    margin: 0 0 1rem;
+  }
+
+  h1 {
+    font-size: clamp(1.75rem, 5vw, 2.25rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin: 0 0 1rem;
+  }
+
+  p {
+    color: var(--muted);
+    margin: 0 0 1.5rem;
+  }
+
+  p:last-of-type { margin-bottom: 2rem; }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+  }
+
+  a.btn {
+    display: inline-block;
+    padding: 0.7rem 1.25rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #05122a;
+  }
+
+  .btn-primary:hover {
+    background: #6cb4ff;
+    color: #05122a;
+  }
+
+  .btn-ghost {
+    border-color: rgba(255, 255, 255, 0.16);
+    color: var(--text);
+  }
+
+  .btn-ghost:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent-2);
+    outline-offset: 3px;
+  }
+
+  footer {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <p class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <span>Sky Creation<em>Innovations</em></span>
+  </p>
+
+  <p class="badge">Coming soon</p>
+  <h1>We are building something new.</h1>
+  <p>
+    This site is under construction. Work in progress lives at
+    <a href="https://founder.skycreation.dev">founder.skycreation.dev</a>
+    in the meantime.
+  </p>
+  <p>
+    For enquiries, email
+    <a href="mailto:contact@skycreation.dev">contact@skycreation.dev</a>.
+  </p>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="https://founder.skycreation.dev">Visit the portfolio</a>
+    <a class="btn btn-ghost" href="https://www.facebook.com/skycreationinnovations/">Facebook</a>
+  </div>
+
+  <footer>
+    &copy; Sky Creation Innovations
+  </footer>
+</main>
+</body>
+</html>

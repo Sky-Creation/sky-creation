@@ -1,14 +1,16 @@
-name: Contact form
+name: Site checks
 
 on:
   push:
     branches: [main]
     paths:
       - "site/**"
+      - "maintenance/**"
       - "netlify.toml"
   pull_request:
     paths:
       - "site/**"
+      - "maintenance/**"
       - "netlify.toml"
   workflow_dispatch:
 
@@ -34,15 +36,18 @@ jobs:
           done
 
       - name: Verify every internal link target exists
+        # Links inside a page are relative to that page's own directory, so a
+        # href is satisfied if the target exists next to it. Both site/ and
+        # maintenance/ are checked because either can be the live publish root.
         run: |
           set -euo pipefail
           missing=0
-          for page in site/*.html; do
+          for page in site/*.html maintenance/*.html; do
             for href in $(grep -o 'href="[^"#][^"]*"' "$page" | sed 's/href="//; s/"$//'); do
               case "$href" in
                 http*|mailto:*|"") continue ;;
               esac
-              target="site/${href%%#*}"
+              target="$(dirname "$page")/${href%%#*}"
               if [ ! -e "$target" ]; then
                 echo "missing: $page -> $href"
                 missing=1
