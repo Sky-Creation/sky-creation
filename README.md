@@ -136,29 +136,26 @@ confirmation can only appear when a send was actually attempted.
    Done: apex `A @` → `75.2.60.5`, `CNAME www` → `sky-creation.netlify.app`.
    Keep the existing Spaceship MX/SPF, Brevo DKIM/DMARC records.
 
-   The `founder` subdomain historically CNAMEd to `waiyantunoo.github.io`
-   (GitHub Pages). After the founder Netlify site exists, change that CNAME to
-   the hostname Netlify shows for the founder project (usually
-   `something.netlify.app`), then optionally make `waiyantunoo.github.io`
-   redirect to `https://founder.skycreation.dev`.
+   Done: `founder` CNAME → `sky-creation-founder.netlify.app`. Do **not** set
+   `founder.skycreation.dev` as a GitHub Pages custom domain on
+   `waiyantunoo.github.io` — that redirects every `github.io/*` path onto the
+   founder host and breaks the visualiser project sites.
 
 6. Turn off the **Powered by Netlify** badge (company and founder projects):
    Project configuration → General → Powered by Netlify badge → off → Save.
-   No redeploy needed.
+   Already done via API (`built_with_badge_enabled: false`).
 
 ### Founder portfolio deploy
 
-Source: `site/founder/`. Create a second Netlify site (or use an existing empty
-one), set its publish directory to `site/founder` (or always pass `--dir`),
-add custom domain `founder.skycreation.dev`, then:
+Source: `site/founder/`. Netlify site ID `b851f1db-a2f0-4f67-81aa-6798f5296ab6`
+(`sky-creation-founder`), custom domain `founder.skycreation.dev`:
 
 ```sh
-netlify link          # choose the founder Netlify site
-netlify deploy --dir=site/founder --prod
+netlify deploy --dir=site/founder --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6
 ```
 
-Until you flip the Spaceship `founder` CNAME, production traffic still hits
-GitHub Pages. Deploy Netlify first, verify the `*.netlify.app` URL, then flip DNS.
+`waiyantunoo.github.io` keeps a bounce page to the branded URL. Project demos
+stay on their `github.io/<repo>/` paths.
 
 ## DNS monitoring
 
