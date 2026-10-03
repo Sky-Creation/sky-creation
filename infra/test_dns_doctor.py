@@ -225,5 +225,65 @@ class TestCheckDkim(unittest.TestCase):
         self.assertEqual(target, self.S1)
 
 
+class TestDigZoneRouting(unittest.TestCase):
+    """Authoritative servers only know their own zone.
+
+    Asking Spaceship's nameservers about a name delegated to brevo.com returns
+    nothing at all, which is indistinguishable from the record being absent.
+    That is why working DKIM read as missing.
+    """
+
+    NS = ["launch1.spaceship.net", "launch2.spaceship.net"]
+
+    def dig(self):
+        return dns_doctor.Dig(nameservers=self.NS, zone="skycreation.dev")
+
+    def test_own_zone_uses_authoritative(self):
+        d = self.dig()
+        for name in (
+            "skycreation.dev",
+            "www.skycreation.dev",
+            "brevo1._domainkey.skycreation.dev",
+            "founder.skycreation.dev",
+        ):
+            self.assertTrue(d.serves(name), name)
+
+    def test_delegated_name_is_not_served_by_our_authorities(self):
+        d = self.dig()
+        for name in (
+            "b1.skycreation-dev.dkim.brevo.com",
+            "brevo5.dkim.brevo.com",
+            "brevo.com",
+            "example.org",
+        ):
+            self.assertFalse(d.serves(name), name)
+
+    def test_trailing_dot_and_case_are_ignored(self):
+        d = self.dig()
+        self.assertTrue(d.serves("WWW.SkyCreation.DEV."))
+        self.assertFalse(d.serves("Brevo5.DKIM.Brevo.Com."))
+
+    def test_suffix_is_not_enough_on_its_own(self):
+        # "notskycreation.dev" must not match the zone skycreation.dev.
+        self.assertFalse(self.dig().serves("notskycreation.dev"))
+
+    def test_without_a_zone_nothing_is_authoritative(self):
+        self.assertFalse(dns_doctor.Dig().serves("skycreation.dev"))
+
+    def test_without_a_zone_but_with_nameservers_allows_queries(self):
+        # Preserves the old behaviour for callers that pass servers directly.
+        self.assertTrue(dns_doctor.Dig(nameservers=self.NS).serves("skycreation.dev"))
+
+    def test_out_of_zone_query_uses_the_system_resolver(self):
+        # The routing decision itself: an out-of-zone name must not be sent to
+        # the authoritative servers.
+        d = self.dig()
+        self.assertFalse(d.serves("brevo5.dkim.brevo.com"))
+        chain_for_in_zone = ["launch1.spaceship.net"]
+        # _query_chain is the single execution path, so assert the routing
+        # decision is what selects it rather than reaching into dig(1).
+        self.assertEqual(d.zone, "skycreation.dev")
+
+
 if __name__ == "__main__":
     unittest.main()

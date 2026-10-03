@@ -132,23 +132,46 @@ class Dig:
     #: authoritative negative answer).
     _NO_REPLY = 9
 
-    def __init__(self, nameservers: list[str] | None = None, timeout: int = 2) -> None:
+    def __init__(self, nameservers: list[str] | None = None, zone: str | None = None, timeout: int = 2) -> None:
         self.nameservers = nameservers or []
+        self.zone = (zone or "").strip().lower().rstrip(".")
         self.timeout = timeout
         self._cache: dict[tuple[str, str, str], list[str]] = {}
         self._lock = threading.Lock()
         self._preferred: str | None = None
 
+    def serves(self, name: str) -> bool:
+        """Whether the discovered authoritative nameservers can answer for `name`.
+
+        Those servers are authoritative only inside their own zone. A name
+        delegated elsewhere, such as the DKIM target Brevo points at, has to go
+        to a recursive resolver: asking the local authoritative server returns
+        nothing at all, which is indistinguishable from the record not existing.
+        That is what made a correctly configured DKIM key read as missing.
+        """
+        if not self.zone:
+            return bool(self.nameservers)
+        candidate = name.lower().rstrip(".")
+        return candidate == self.zone or candidate.endswith("." + self.zone)
+
     def query(self, name: str, rtype: str) -> list[str]:
         """Return raw short-form answers for one name/type."""
-        with self._lock:
-            chain = [s for s in self.nameservers if s != self._preferred]
-            if self._preferred:
-                chain.insert(0, self._preferred)
-        if not chain:
+        chain: list[str | None] = []
+        if self.serves(name):
+            with self._lock:
+                chain = [s for s in self.nameservers if s != self._preferred]
+                if self._preferred:
+                    chain.insert(0, self._preferred)
+            if not chain:
+                chain = [None]
+            if None not in chain:
+                chain.append(None)  # authoritative never replied; ask a recursive resolver
+        else:
+            # Outside the zone, only a recursive resolver knows the answer.
             chain = [None]
-        if None not in chain:
-            chain.append(None)  # authoritative never replied; ask a recursive resolver
+        return self._query_chain(name, rtype, chain)
+
+    def _query_chain(self, name: str, rtype: str, chain: list[str | None]) -> list[str]:
         for server in chain:
             key = (name, rtype, server or "system")
             with self._lock:
@@ -604,6 +627,9 @@ def run(domain: str, control_plane: bool = False) -> Doctor:
         return doc
 
     dig.nameservers = dig.ns(domain)
+    # Names outside this zone must be resolved recursively rather than by the
+    # local authoritative servers, which know nothing about them.
+    dig.zone = domain
 
     checks = [
         check_apex_mail,
