@@ -7,12 +7,14 @@ on:
       - "site/**"
       - "maintenance/**"
       - "infra/**"
+      - ".github/**"
       - "netlify.toml"
   pull_request:
     paths:
       - "site/**"
       - "maintenance/**"
       - "infra/**"
+      - ".github/**"
       - "netlify.toml"
   workflow_dispatch:
 
