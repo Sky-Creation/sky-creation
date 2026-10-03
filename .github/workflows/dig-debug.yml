@@ -26,8 +26,9 @@ jobs:
 
           dig = m.Dig()
           fqdn = "brevo1._domainkey.skycreation.dev"
-
+          dig.nameservers = dig.ns("skycreation.dev")
           print("nameservers:", dig.nameservers)
+
           print("raw TXT   :", dig.query(fqdn, "TXT"))
           print("txt()     :", [t[:40] for t in dig.txt(fqdn)])
           print("cname()   :", dig.cname(fqdn))
@@ -38,7 +39,20 @@ jobs:
           for t in records:
               print("  is_dkim:", m.is_dkim_record(t), "|", t[:50])
 
-          print("--- direct TXT at the final name ---")
-          print("brevo5 TXT:", [t[:40] for t in dig.txt("brevo5.dkim.brevo.com")])
-          print("brevo5 is_dkim:", [m.is_dkim_record(t) for t in dig.txt("brevo5.dkim.brevo.com")])
+          print("--- full doctor on the authoritative path ---")
+          doc = m.Doctor("skycreation.dev")
+          m.check_dkim(doc, dig)
+          print("check_dkim failed:", doc.failed)
+          for f in doc.findings:
+              print("  ", f.level, "|", f.detail[:90])
+
+          print("--- raw dig against each authoritative server ---")
+          import subprocess
+          for ns in dig.nameservers:
+              for rtype in ("TXT", "CNAME"):
+                  out = subprocess.run(
+                      ["dig", "+short", f"@{ns}", fqdn, rtype],
+                      capture_output=True, text=True,
+                  )
+                  print(f"@{ns} {rtype}: {out.stdout.strip()[:160]!r}")
           PY
