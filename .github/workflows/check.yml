@@ -73,19 +73,36 @@ jobs:
           PY
 
       - name: Verify every internal link target exists
-        # Links inside a page are relative to that page's own directory, so a
-        # href is satisfied if the target exists next to it. Both site/ and
-        # maintenance/ are checked because either can be the live publish root.
+        # Handles both link styles in the repo: root-relative ("/about", which
+        # Netlify resolves through pretty_urls) and page-relative
+        # ("assets/styles.css"). Both site/ and maintenance/ are checked because
+        # either can be the live publish root.
         run: |
           set -euo pipefail
           missing=0
           for page in site/*.html maintenance/*.html; do
             for href in $(grep -o 'href="[^"#][^"]*"' "$page" | sed 's/href="//; s/"$//'); do
               case "$href" in
-                http*|mailto:*|"") continue ;;
+                http*|mailto:*|tel:*|//*|"") continue ;;
               esac
-              target="$(dirname "$page")/${href%%#*}"
-              if [ ! -e "$target" ]; then
+              clean="${href%%#*}"
+              clean="${clean%%\?*}"
+              if [ "${clean:0:1}" = "/" ]; then
+                # Root-relative: resolve against the publish directory.
+                target="site$clean"
+                candidates="$target $target.html $target/index.html"
+              else
+                target="$(dirname "$page")/$clean"
+                candidates="$target"
+              fi
+              found=0
+              for candidate in $candidates; do
+                if [ -e "$candidate" ]; then
+                  found=1
+                  break
+                fi
+              done
+              if [ "$found" -eq 0 ]; then
                 echo "missing: $page -> $href"
                 missing=1
               fi
