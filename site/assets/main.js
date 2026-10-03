@@ -37,33 +37,6 @@
     });
   }
 
-  // --- Active section highlight (same-page anchors only) -------------------
-  var navLinks = Array.prototype.slice.call(document.querySelectorAll('.site-nav a[href^="#"]'));
-  var byId = {};
-
-  navLinks.forEach(function (link) {
-    var id = link.getAttribute('href').slice(1);
-    var target = id && document.getElementById(id);
-    if (target) byId[id] = link;
-  });
-
-  var observed = Object.keys(byId).map(function (id) {
-    return document.getElementById(id);
-  });
-
-  if (observed.length && 'IntersectionObserver' in window) {
-    var observer = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        var link = byId[entry.target.id];
-        if (link) link.style.color = entry.isIntersecting ? 'var(--text)' : '';
-      });
-    }, { rootMargin: '-45% 0px -50% 0px' });
-
-    observed.forEach(function (el) {
-      observer.observe(el);
-    });
-  }
-
   // --- Facebook posts ----------------------------------------------------
   // Rendered from assets/posts.js. The containing <section> is hidden while the
   // matching list is empty, so an unfilled slot never shows a bare heading.

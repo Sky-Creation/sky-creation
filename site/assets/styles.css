@@ -320,6 +320,12 @@ p:last-child {
   box-shadow: var(--shadow);
 }
 
+/* Cards stacked directly in a section, as opposed to a .grid of them. Spacing
+   sits between siblings so the last card carries no trailing margin. */
+.section > .card + .card {
+  margin-top: 1rem;
+}
+
 .card p {
   color: var(--muted);
 }
@@ -599,8 +605,24 @@ p:last-child {
   text-align: center;
 }
 
+.cta .section-head {
+  margin-inline: auto;
+}
+
 .cta .hero-actions {
   justify-content: center;
+}
+
+/* --- Spacing utilities -------------------------------------------------- */
+/* These replaced one-off style attributes. Spacing now lives in this file and
+   can be changed in one place instead of page by page. */
+
+.mt-sm {
+  margin-top: 1rem;
+}
+
+.mt-md {
+  margin-top: 1.5rem;
 }
 
 /* --- Footer ------------------------------------------------------------- */
@@ -654,10 +676,6 @@ p:last-child {
   .site-nav a {
     padding: 0.6rem 0;
     width: 100%;
-  }
-
-  .site-header {
-    position: sticky;
   }
 }
 
