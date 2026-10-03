@@ -431,29 +431,39 @@ def is_dkim_record(txt: str) -> bool:
     return len(tags.get("p", "")) >= 32
 
 
-def check_dkim(doc: Doctor, dig: Dig) -> None:
-    """Brevo installs its own DKIM selectors; they are what signs contact-form mail.
+def follow_txt_chain(dig: Dig, name: str, max_hops: int = 5) -> tuple[list[str], str]:
+    """Read TXT records at ``name``, walking CNAME delegation to the end.
 
-    Brevo delegates the key rather than publishing it here: the selector is a
-    CNAME to brevoN.dkim.brevo.com, and the key lives at the far end of that
-    alias. Asking the local name for TXT alone therefore finds nothing, so the
-    alias is followed and the key is read where it actually is.
+    Providers rarely publish a key directly on the selector. Brevo uses two
+    hops: brevo1._domainkey.skycreation.dev CNAMEs to
+    b1.skycreation-dev.dkim.brevo.com, which itself CNAMEs to
+    brevo5.dkim.brevo.com, and only that final name carries the key. Asking an
+    intermediate name for TXT returns the next CNAME instead of a record, so
+    anything short of following the whole chain finds nothing.
+
+    Returns the records found and the name they were finally read from.
     """
+    current = name
+    for _ in range(max_hops):
+        records = dig.txt(current)
+        if [t for t in records if is_dkim_record(t)]:
+            return records, current
+        aliases = dig.cname(current)
+        if not aliases:
+            return records, current
+        current = aliases[0]
+    return [], current
+
+
+def check_dkim(doc: Doctor, dig: Dig) -> None:
+    """Brevo installs its own DKIM selectors; they are what signs contact-form mail."""
     found = []
     for selector in BREVO_DKIM_SELECTORS:
         fqdn = f"{selector}._domainkey.{doc.domain}"
-        records = dig.txt(fqdn)
-        target = None
-
-        if not [t for t in records if is_dkim_record(t)]:
-            # No key published directly here; look through the CNAME chain.
-            aliases = dig.cname(fqdn)
-            if aliases:
-                target = aliases[0]
-                records = dig.txt(target)
+        records, target = follow_txt_chain(dig, fqdn)
 
         if [t for t in records if is_dkim_record(t)]:
-            found.append(f"{selector} via {target}" if target else selector)
+            found.append(f"{selector} via {target}" if target != fqdn else selector)
         else:
             doc.fail(
                 "dkim-brevo",

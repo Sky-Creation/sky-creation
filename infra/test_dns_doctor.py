@@ -137,37 +137,60 @@ class FakeDig:
 
 
 class TestCheckDkim(unittest.TestCase):
-    """Brevo delegates DKIM by CNAME, so the key is only at the far end."""
+    """Brevo delegates DKIM through a two-hop CNAME chain."""
 
     S1 = "brevo1._domainkey.skycreation.dev"
     S2 = "brevo2._domainkey.skycreation.dev"
+    # The intermediate name CNAMEs again; the key is only at the far end.
     T1 = "b1.skycreation-dev.dkim.brevo.com"
     T2 = "b2.skycreation-dev.dkim.brevo.com"
+    E1 = "brevo5.dkim.brevo.com"
+    E2 = "brevo6.dkim.brevo.com"
 
     def doc(self):
         return dns_doctor.Doctor("skycreation.dev")
 
-    def both(self):
-        """Both selectors delegated, which is how Brevo publishes them."""
+    def live_shape(self):
+        """Exactly what dig returned on the runner, including the second hop."""
         return FakeDig(
             {
+                (self.S1, "TXT"): [self.T1 + "."],  # dig returns the CNAME, not a key
                 (self.S1, "CNAME"): [self.T1],
-                (self.T1, "TXT"): [BREVO_DKIM],
+                (self.T1, "TXT"): [self.E1 + "."],
+                (self.T1, "CNAME"): [self.E1],
+                (self.E1, "TXT"): [BREVO_DKIM],
+                (self.S2, "TXT"): [self.T2 + "."],
                 (self.S2, "CNAME"): [self.T2],
-                (self.T2, "TXT"): [BREVO_DKIM],
+                (self.T2, "TXT"): [self.E2 + "."],
+                (self.T2, "CNAME"): [self.E2],
+                (self.E2, "TXT"): [BREVO_DKIM],
             }
         )
 
-    def test_follows_cname_to_brevo_and_passes(self):
-        # This is the live shape: no TXT at the selector, a CNAME, and the key
-        # published at the alias target. The check previously failed here.
+    def test_follows_two_hop_cname_chain_to_brevo(self):
+        # The regression: only the first alias was followed, so TXT was read at
+        # an intermediate name that has none and both selectors were reported
+        # missing while the keys were live in DNS.
         doc = self.doc()
-        dns_doctor.check_dkim(doc, self.both())
+        dns_doctor.check_dkim(doc, self.live_shape())
 
         fails = [f for f in doc.findings if f.level == dns_doctor.FAIL]
         self.assertEqual(fails, [], f"expected no failures, got {[f.detail for f in fails]}")
         self.assertFalse(doc.failed)
-        self.assertTrue(any(self.T1 in f.detail for f in doc.findings))
+        self.assertTrue(any(self.E1 in f.detail for f in doc.findings))
+
+    def test_single_hop_chain_passes(self):
+        dig = FakeDig(
+            {
+                (self.S1, "CNAME"): [self.E1],
+                (self.E1, "TXT"): [BREVO_DKIM],
+                (self.S2, "CNAME"): [self.E2],
+                (self.E2, "TXT"): [BREVO_DKIM],
+            }
+        )
+        doc = self.doc()
+        dns_doctor.check_dkim(doc, dig)
+        self.assertFalse(doc.failed)
 
     def test_direct_txt_key_passes(self):
         dig = FakeDig({(self.S1, "TXT"): [BREVO_DKIM], (self.S2, "TXT"): [BREVO_DKIM]})
@@ -175,10 +198,10 @@ class TestCheckDkim(unittest.TestCase):
         dns_doctor.check_dkim(doc, dig)
         self.assertFalse(doc.failed)
 
-    def test_cname_present_but_target_has_no_key_fails(self):
-        # A dangling alias is not a working signature; it must still be a FAIL
-        # rather than being waved through because a CNAME exists.
-        dig = FakeDig({(self.S1, "CNAME"): [self.T1]})
+    def test_dangling_chain_fails(self):
+        # The alias chain exists but no key at the end: mail would not be
+        # signed, so this must not be waved through.
+        dig = FakeDig({(self.S1, "CNAME"): [self.T1], (self.T1, "CNAME"): [self.E1]})
         doc = self.doc()
         dns_doctor.check_dkim(doc, dig)
         self.assertTrue(doc.failed)
@@ -187,6 +210,19 @@ class TestCheckDkim(unittest.TestCase):
         doc = self.doc()
         dns_doctor.check_dkim(doc, FakeDig({}))
         self.assertTrue(doc.failed)
+
+    def test_cname_loop_terminates(self):
+        # Two names pointing at each other must not hang the nightly job.
+        dig = FakeDig({(self.S1, "CNAME"): ["loop-a.example"], (self.S2, "CNAME"): ["loop-b.example"]})
+        records, target = dns_doctor.follow_txt_chain(dig, self.S1)
+        self.assertEqual(records, [])
+        self.assertTrue(target)
+
+    def test_follow_txt_chain_reports_direct_name(self):
+        dig = FakeDig({(self.S1, "TXT"): [BREVO_DKIM]})
+        records, target = dns_doctor.follow_txt_chain(dig, self.S1)
+        self.assertTrue(records)
+        self.assertEqual(target, self.S1)
 
 
 if __name__ == "__main__":
