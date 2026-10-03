@@ -38,7 +38,7 @@ import threading
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 # --------------------------------------------------------------------------
 # Expected layout
@@ -308,7 +308,10 @@ def count_spf_lookups(spf: str) -> int:
     """Count DNS-querying mechanisms in an SPF record (RFC 7208 limit is 10)."""
     mechanisms = 0
     for token in spf.split():
-        name = token.split(":", 1)[0].split("/", 1)[0].lower()
+        # Strip any modifier first, then the mechanism's own arguments:
+        # "redirect=other.example.com" is a lookup, and "exists:example.com"
+        # is one too, so both forms have to reduce to a bare name.
+        name = token.split("=", 1)[0].split(":", 1)[0].split("/", 1)[0].lower()
         if name in {"include", "a", "mx", "ptr", "exists", "redirect"}:
             mechanisms += 1
     return mechanisms
@@ -399,12 +402,41 @@ def check_spf(doc: Doctor, dig: Dig) -> None:
         doc.info("spf-lookup-limit", f"apex SPF uses {lookups}/{SPF_LOOKUP_LIMIT} DNS lookups")
 
 
+def is_dkim_record(txt: str) -> bool:
+    """Return True if a TXT value is a usable DKIM public key.
+
+    RFC 6376 makes the ``v=DKIM1`` tag optional, and Brevo omits it: its
+    records start with ``k=rsa;p=MIIB...``. Matching on the tag alone therefore
+    reported working DKIM as missing. A key is identified by its key type and
+    base64 material instead.
+
+    An empty ``p=`` means the key is revoked, so key material is required and a
+    bare ``k=rsa`` does not count as a usable record.
+    """
+    value = txt.strip().lower()
+    if not value:
+        return False
+
+    tags: dict[str, str] = {}
+    for field in value.split(";"):
+        tag, _, remainder = field.partition("=")
+        tag = tag.strip()
+        if tag:
+            tags[tag] = remainder.strip()
+
+    # k defaults to rsa when absent, per RFC 6376.
+    if tags.get("k", "rsa") not in ("rsa", "ed25519"):
+        return False
+
+    return len(tags.get("p", "")) >= 32
+
+
 def check_dkim(doc: Doctor, dig: Dig) -> None:
     """Brevo installs its own DKIM selectors; they are what signs contact-form mail."""
     found = []
     for selector in BREVO_DKIM_SELECTORS:
         fqdn = f"{selector}._domainkey.{doc.domain}"
-        if [t for t in dig.txt(fqdn) if t.lower().startswith("v=dkim1")]:
+        if [t for t in dig.txt(fqdn) if is_dkim_record(t)]:
             found.append(selector)
         elif dig.cname(f"{selector}._domainkey"):
             found.append(f"{selector} (CNAME)")
