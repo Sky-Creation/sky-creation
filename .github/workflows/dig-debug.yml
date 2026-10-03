@@ -1,0 +1,31 @@
+name: dig-debug
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show what dig actually returns
+        run: |
+          set -uo pipefail
+          echo "### NS for skycreation.dev"
+          dig +short NS skycreation.dev
+          echo
+          echo "### dig +short brevo1._domainkey.skycreation.dev TXT"
+          dig +short brevo1._domainkey.skycreation.dev TXT
+          echo "(exit $?)"
+          echo
+          echo "### dig +short brevo1._domainkey.skycreation.dev CNAME"
+          dig +short brevo1._domainkey.skycreation.dev CNAME
+          echo "(exit $?)"
+          echo
+          echo "### dig +short b1.skycreation-dev.dkim.brevo.com TXT  (first 3 lines)"
+          dig +short b1.skycreation-dev.dkim.brevo.com TXT | head -3
+          echo
+          echo "### full dig (no +short) for TXT at the selector"
+          dig brevo1._domainkey.skycreation.dev TXT | sed -n '1,60p'
