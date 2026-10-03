@@ -61,12 +61,17 @@ jobs:
         # really emits parseable JSON. A missing dig is an environment problem
         # and is allowed to pass; a crash in our own code is not.
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if ! command -v dig >/dev/null; then
             echo "dig unavailable on this runner, skipping JSON smoke test"
             exit 0
           fi
-          python3 infra/dns_doctor.py --domain skycreation.dev --json > report.json
+          # The doctor exits non-zero when it reports a finding, which is the
+          # normal case for a domain that is not perfect. That is not what this
+          # step is testing: it checks that the report is emitted as JSON at all.
+          # dns-watch.yml is where failing DNS should turn a build red.
+          python3 infra/dns_doctor.py --domain skycreation.dev --json > report.json || true
+          set -e
           python3 - <<'PY'
           import json
           with open("report.json", encoding="utf-8") as fh:
