@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: read
+  # Needed to open/close the tracking issue when DNS looks wrong.
+  issues: write
 
 concurrency:
   group: dns-watch
@@ -48,3 +50,69 @@ jobs:
           SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}
           SPACESHIP_API_SECRET: ${{ secrets.SPACESHIP_API_SECRET }}
         run: python3 infra/dns_doctor.py --domain "$DOMAIN" --no-color --control-plane
+
+      - name: Summarise the report
+        if: always()
+        env:
+          TITLE: "DNS check failing for skycreation.dev"
+        run: |
+          {
+            echo "## $TITLE"
+            echo
+            echo '```json'
+            cat report.json 2>/dev/null || echo '{"error": "no report was produced"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the tracking issue
+        # A red nightly run nobody reads is the same as no monitoring at all, so
+        # a failure files itself as an issue. Re-running does not spam the
+        # tracker: the open issue is commented on instead.
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "DNS check failing for skycreation.dev"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          {
+            echo "The nightly DNS doctor reported problems."
+            echo
+            echo '```json'
+            cat report.json 2>/dev/null || echo '{"error": "no report was produced"}'
+            echo '```'
+            echo
+            echo "Run: $RUN_URL"
+          } > "$body"
+
+          number="$(
+            gh issue list --state open --limit 100 --json number,title \
+              --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty"
+          )"
+
+          if [ -n "$number" ]; then
+            echo "commenting on existing issue #$number"
+            gh issue comment "$number" --body-file "$body"
+          else
+            echo "opening a new issue"
+            gh issue create --title "$TITLE" --body-file "$body"
+          fi
+
+      - name: Close the tracking issue once DNS is healthy
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "DNS check failing for skycreation.dev"
+        run: |
+          set -euo pipefail
+          number="$(
+            gh issue list --state open --limit 100 --json number,title \
+              --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty"
+          )"
+          if [ -n "$number" ]; then
+            echo "closing issue #$number"
+            gh issue close "$number" --comment "DNS checks are passing again."
+          else
+            echo "no open issue to close"
+          fi

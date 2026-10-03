@@ -6,11 +6,13 @@ on:
     paths:
       - "site/**"
       - "maintenance/**"
+      - "infra/**"
       - "netlify.toml"
   pull_request:
     paths:
       - "site/**"
       - "maintenance/**"
+      - "infra/**"
       - "netlify.toml"
   workflow_dispatch:
 
@@ -27,6 +29,10 @@ jobs:
         with:
           node-version: "22"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Syntax-check the JavaScript
         run: |
           set -euo pipefail
@@ -34,6 +40,37 @@ jobs:
             echo "checking $file"
             node --check "$file"
           done
+
+      - name: Test the contact form
+        # The form has a history of telling visitors a message was sent when it
+        # was not, so both halves are tested rather than eyeballed.
+        run: |
+          set -euo pipefail
+          node --test site/test/
+
+      - name: Test the DNS doctor parsers
+        run: python3 -m unittest discover -s infra -v
+
+      - name: Smoke-test the JSON report
+        # --json used to die with a NameError on every run because asdict was
+        # never imported, and the nightly job swallowed it. Assert the CLI
+        # really emits parseable JSON. A missing dig is an environment problem
+        # and is allowed to pass; a crash in our own code is not.
+        run: |
+          set -euo pipefail
+          if ! command -v dig >/dev/null; then
+            echo "dig unavailable on this runner, skipping JSON smoke test"
+            exit 0
+          fi
+          python3 infra/dns_doctor.py --domain skycreation.dev --json > report.json
+          python3 - <<'PY'
+          import json
+          with open("report.json", encoding="utf-8") as fh:
+              report = json.load(fh)
+          assert report["domain"] == "skycreation.dev", report
+          assert isinstance(report["findings"], list), report
+          print(f"report.json OK: {len(report['findings'])} findings")
+          PY
 
       - name: Verify every internal link target exists
         # Links inside a page are relative to that page's own directory, so a
