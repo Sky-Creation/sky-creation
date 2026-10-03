@@ -12,8 +12,11 @@ operational one: what the traps are and what not to undo.
 ## 1. What this is
 
 - **Production site:** <https://skycreation.dev> — five static pages, no build step
-- **Founder portfolio:** <https://founder.skycreation.dev> — a **separate** Netlify
-  site, not part of this repository. Linked from the main menu as an external site.
+- **Founder portfolio:** <https://founder.skycreation.dev> — source in
+  `site/founder/`, separate Netlify site (same repo). Linked from the main menu
+  as an external subdomain. Formerly hosted on GitHub Pages
+  (`waiyantunoo.github.io`); keep that Pages site only as a redirect after DNS
+  points `founder` at Netlify.
 - **Hosting:** Netlify (free tier, manually deployed)
 - **Contact form:** Netlify Function → Brevo
 - **DNS:** Spaceship, monitored nightly by GitHub Actions
@@ -31,8 +34,8 @@ published** — it is the emergency takedown switch, nothing more.
 ## 2. Layout
 
 ```
-netlify.toml              Netlify config. Lives at repo root on purpose.
-site/                     The published site
+netlify.toml              Company-site Netlify config. Lives at repo root on purpose.
+site/                     Company site publish root
   index.html              Landing
   about.html              Studio and founder
   work.html               Project catalogue
@@ -45,6 +48,7 @@ site/                     The published site
   functions/contact.mjs   Netlify Function -> Brevo
   test/main.test.mjs      Contact form, client side
   test/contact.test.mjs   Contact form, server side
+  founder/                Founder portfolio publish root (separate Netlify site)
 maintenance/              Emergency fallback, NOT published
 infra/
   dns_doctor.py           Read-only DNS health check
@@ -65,6 +69,7 @@ python3 -m unittest discover -s infra   # 39 tests
 
 # Deploy (manual - see §4)
 netlify deploy --dir=site --prod
+netlify deploy --dir=site/founder --prod   # founder Netlify site only
 
 # DNS check locally (needs dig)
 python3 infra/dns_doctor.py
@@ -84,12 +89,17 @@ deployed the site.
 ### `--dir` overrides `[build] publish`
 
 ```sh
-netlify deploy --dir=. --prod     # BREAKS the site: 404 at /
-netlify deploy --dir=site --prod  # correct
+netlify deploy --dir=. --prod              # BREAKS the company site: 404 at /
+netlify deploy --dir=site --prod           # company site
+netlify deploy --dir=site/founder --prod   # founder site (must be linked to that Netlify project)
 ```
 
 Passing the repo root uploads the whole tree; there is no `index.html` at the
-top level, so `/` 404s. This has already happened once.
+top level, so `/` 404s on the company site. This has already happened once.
+
+Deploy the founder site only against the founder Netlify project. Deploying
+`site/founder` to the company site is wrong, and deploying `site` to the
+founder site is wrong.
 
 ### Extensionless URLs are canonical
 
@@ -166,7 +176,12 @@ it — a broken CI fix cannot be verified by CI without this.
 
 ## 5. Netlify environment
 
-Site ID `19485f7b-5cc0-426e-a8a0-4ad43a5ea66a`.
+Company site ID `19485f7b-5cc0-426e-a8a0-4ad43a5ea66a` (`sky-creation`).
+
+Founder site ID `b851f1db-a2f0-4f67-81aa-6798f5296ab6` (`sky-creation-founder`).
+Publish with `netlify deploy --dir=site/founder --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6`.
+Custom domain `founder.skycreation.dev` is attached; Spacehip `founder` CNAME must target
+`sky-creation-founder.netlify.app` for traffic to leave GitHub Pages.
 
 | Variable | Value |
 | --- | --- |
@@ -195,8 +210,11 @@ explicitly and verified working. Changing them breaks a working mail path.
 | Item | State |
 | --- | --- |
 | `site/assets/posts.js` | Both `company` and `math` arrays are **empty**. Sections auto-hide until populated. Needs the user's actual Facebook post text — do not invent content. |
+| Founder Netlify cutover | Done. Site `sky-creation-founder` serves `founder.skycreation.dev` (CNAME → `sky-creation-founder.netlify.app`). `waiyantunoo.github.io` redirects to the branded URL. |
+| GitHub Pages custom domain | Must stay **cleared** on `waiyantunoo.github.io`. Re-adding `founder.skycreation.dev` as a Pages custom domain hijacks every `github.io/*` path and 404s the visualiser project sites. |
+| Turn off Powered by Netlify badge | Done via API (`built_with_badge_enabled: false`) on company and founder sites. |
 | Deploy automation | Not set up. Linking the repo to Netlify, or adding a deploy hook, would make CI publish. Ask before doing it. |
-| `SPACESHIP_API_KEY` / `SPACESHIP_API_SECRET` | Not set in GitHub. Only the optional `--control-plane` cross-check needs them; everything else runs without. |
+| `SPACESHIP_API_KEY` / `SPACESHIP_API_SECRET` | Provided for the cutover; do **not** commit. Prefer GitHub Actions secrets if the DNS watch `--control-plane` check should use them. |
 | `Sky-Creation/zz-write-probe` | Stray private repo from earlier diagnostics. Needs manual deletion; GitHub API writes were failing intermittently. |
 | Org default permission | The `Sky-Creation` org's `default_repository_permission` was changed from `read` to `write` during diagnostics. Revert if unintended. |
 

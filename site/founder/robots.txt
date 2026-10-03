@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://founder.skycreation.dev/sitemap.xml

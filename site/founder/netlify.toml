@@ -1,0 +1,33 @@
+# Netlify config for the founder portfolio site (founder.skycreation.dev).
+# Deploy from repo root against the founder site, without company functions:
+#   netlify deploy --dir=site/founder --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6
+#
+# Prefer setting this Netlify project's Base directory to `site/founder` so
+# this file is the only config applied (no contact function from root).
+
+[build]
+  publish = "."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=(), interest-cohort=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+[[headers]]
+  for = "/images/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

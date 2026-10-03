@@ -4,7 +4,7 @@ Official website for **Sky Creation Innovations**, plus the DNS tooling that
 keeps the domain healthy.
 
 - Live site: <https://skycreation.dev>
-- Founder portfolio (separate site, not part of this repo): <https://founder.skycreation.dev>
+- Founder portfolio (same repo, separate Netlify site): <https://founder.skycreation.dev>
 
 Everything here is free-tier only: Netlify for hosting, Brevo for the contact
 form, GitHub Actions for DNS monitoring, Spaceship for DNS.
@@ -14,8 +14,8 @@ If you are an AI agent or picking this up cold, read [AGENTS.md](AGENTS.md) firs
 ## Layout
 
 ```
-netlify.toml                        Netlify build config (root, so it is found)
-site/                                The published site
+netlify.toml                        Company-site Netlify config (repo root)
+site/                                Company site publish root
   index.html                        Landing
   about.html                        Studio and founder
   work.html                         Project catalogue
@@ -27,6 +27,11 @@ site/                                The published site
   assets/favicon.svg
   functions/contact.mjs             Netlify Function -> Brevo
   test/                             Node tests for the form, client and server
+  founder/                          Founder portfolio (separate Netlify site)
+    index.html                      Portfolio (Tailwind CDN)
+    images/                         Profile and OG images
+    robots.txt, sitemap.xml
+    netlify.toml                    Headers when founder site base is this dir
 maintenance/                        Emergency fallback, not published
   index.html                        "Coming soon" page
   assets/favicon.svg
@@ -65,12 +70,17 @@ whole tree and the site 404s at `/`, because there is no `index.html` at the
 top level. Point `--dir` at the directory you actually want published:
 
 ```sh
-netlify deploy --dir=site --prod             # the live site
+netlify deploy --dir=site --prod             # company site (skycreation.dev)
+netlify deploy --dir=site/founder --prod     # founder portfolio (founder.skycreation.dev)
 netlify deploy --dir=maintenance --prod      # the coming-soon fallback
 ```
 
-The functions directory still comes from `netlify.toml`, so the contact
-function is deployed with either command.
+Use the Netlify site that matches the content: company site for `site`, founder
+site for `site/founder`. `--dir` overrides `[build] publish`. Passing the
+repository root uploads the whole tree and the company site 404s at `/`.
+
+The company functions directory still comes from the root `netlify.toml`, so
+the contact function is deployed with the company-site command.
 
 ## Checks
 
@@ -124,8 +134,31 @@ confirmation can only appear when a send was actually attempted.
    rather than guessing them, because Netlify's apex record differs by setup.
 
    Done: apex `A @` → `75.2.60.5`, `CNAME www` → `sky-creation.netlify.app`.
-   Keep the existing Spaceship MX/SPF, Brevo DKIM/DMARC, and `founder` CNAME
-   records.
+   Keep the existing Spaceship MX/SPF, Brevo DKIM/DMARC records.
+
+   The `founder` subdomain historically CNAMEd to `waiyantunoo.github.io`
+   (GitHub Pages). After the founder Netlify site exists, change that CNAME to
+   the hostname Netlify shows for the founder project (usually
+   `something.netlify.app`), then optionally make `waiyantunoo.github.io`
+   redirect to `https://founder.skycreation.dev`.
+
+6. Turn off the **Powered by Netlify** badge (company and founder projects):
+   Project configuration → General → Powered by Netlify badge → off → Save.
+   No redeploy needed.
+
+### Founder portfolio deploy
+
+Source: `site/founder/`. Create a second Netlify site (or use an existing empty
+one), set its publish directory to `site/founder` (or always pass `--dir`),
+add custom domain `founder.skycreation.dev`, then:
+
+```sh
+netlify link          # choose the founder Netlify site
+netlify deploy --dir=site/founder --prod
+```
+
+Until you flip the Spaceship `founder` CNAME, production traffic still hits
+GitHub Pages. Deploy Netlify first, verify the `*.netlify.app` URL, then flip DNS.
 
 ## DNS monitoring
 

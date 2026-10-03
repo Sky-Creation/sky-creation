@@ -564,7 +564,12 @@ def check_website(doc: Doctor, dig: Dig) -> None:
 
 
 def check_founder_subdomain(doc: Doctor, dig: Dig) -> None:
-    """The founder portfolio is a separate site and must keep working."""
+    """Founder portfolio subdomain must keep resolving.
+
+    Source lives in site/founder/ (this repo). Hosting may be GitHub Pages
+    (waiyantunoo.github.io) or Netlify after cutover; either is fine as long
+    as founder.<domain> resolves.
+    """
     name = f"founder.{doc.domain}"
     aliases = dig.cname(name)
     addresses = dig.a(name)

@@ -1,7 +1,9 @@
 /* Facebook posts shown on the site.
  *
  * This is the only file you need to edit to add posts. Add one object to the
- * relevant list, newest first, then push - Netlify redeploys.
+ * relevant list, newest first, then deploy manually:
+ *   netlify deploy --dir=site --prod
+ * Pushing to GitHub does not publish anything.
  *
  *   date    the post date, e.g. "2026-04-18" (used for sorting and display)
  *   text    the post itself, plain text. Line breaks are preserved.

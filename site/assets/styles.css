@@ -171,8 +171,9 @@ a:hover {
   color: var(--text);
 }
 
-/* The founder portfolio is a separate site on another subdomain, not a page of
-   this one. It is marked so nobody expects to stay on skycreation.dev. */
+/* The founder portfolio is a separate subdomain (founder.skycreation.dev),
+   sourced from site/founder/ in this repo. Marked so nobody expects to stay
+   on skycreation.dev when they follow the nav link. */
 .site-nav .nav-external {
   display: inline-flex;
   align-items: baseline;

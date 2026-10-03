@@ -5,6 +5,11 @@
 # maintenance/ is kept in the repository as an emergency fallback but is
 # deliberately not published: switching publish to "maintenance" and deploying
 # is the documented way to take the site down if it ever has to be.
+#
+# The founder portfolio lives at site/founder/ and is a separate Netlify site
+# (founder.skycreation.dev). Deploy it with:
+#   netlify deploy --dir=site/founder --prod
+# against that site. Do not rely on this file's publish = "site" for founder.
 
 [build]
   publish = "site"
@@ -13,12 +18,31 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# Pretty URLs: /about serves about.html. Extensionless form is canonical.
+[build.processing]
+  skip_processing = false
+[build.processing.html]
+  pretty_urls = true
+
 # --- Contact form -> Netlify Function -> Brevo ---------------------------
 
 [[redirects]]
   from = "/api/contact"
   to = "/.netlify/functions/contact"
   status = 200
+
+# Founder portfolio lives on its own subdomain; keep /founder as a bounce.
+[[redirects]]
+  from = "/founder"
+  to = "https://founder.skycreation.dev/"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/founder/*"
+  to = "https://founder.skycreation.dev/:splat"
+  status = 301
+  force = true
 
 # --- Headers --------------------------------------------------------------
 
@@ -38,7 +62,43 @@
     Cache-Control = "public, max-age=3600"
 
 # HTML should always revalidate so a deploy is visible immediately.
+# Cover both extensionless pretty URLs and raw .html paths.
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 [[headers]]
   for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/about"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/work"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/math"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/contact"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/founder"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/founder/*"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
