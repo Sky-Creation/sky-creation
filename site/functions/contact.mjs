@@ -8,9 +8,13 @@
  * Optional:
  *   CONTACT_FROM    verified Brevo sender (defaults to CONTACT_TO)
  *
- * Anti-abuse: honeypot field, per-instance rate limit, payload size cap and a
- * minimum fill time. None of these stop a determined attacker; they raise the
- * cost enough that the free tier is not trivially burnable.
+ * Anti-abuse: honeypot field, per-instance rate limit and a payload size cap.
+ * None of these stop a determined attacker; they raise the cost enough that the
+ * free tier is not trivially burnable.
+ *
+ * Every legitimate submission is emailed. Nothing is silently discarded on the
+ * way through, because a customer who is told "message sent" must be able to
+ * rely on it.
  */
 
 const BREVO_URL = 'https://api.brevo.com/v3/smtp/email';
@@ -19,7 +23,6 @@ const MAX_NAME = 120;
 const MAX_EMAIL = 200;
 const MAX_SUBJECT = 150;
 const MAX_MESSAGE = 4000;
-const MIN_FILL_MS = 1200;
 const RATE_LIMIT = { max: 5, windowMs: 10 * 60 * 1000 };
 
 /** Per warm-instance memory, so limits are approximate across a fleet. */
@@ -114,6 +117,7 @@ export const handler = async (event) => {
 
   // Honeypot: a filled hidden field means a bot. Report success, send nothing.
   if (clean(body.company, 200)) {
+    console.log('contact: honeypot triggered, message discarded');
     return respond(200, { ok: true });
   }
 
@@ -127,10 +131,6 @@ export const handler = async (event) => {
 
   if (!name || !message || !EMAIL_RE.test(email)) {
     return respond(400, { error: 'Please provide a name, a valid email and a message.' });
-  }
-
-  if (Date.now() - Number(body.startedAt || 0) < MIN_FILL_MS) {
-    return respond(200, { ok: true });
   }
 
   if (rateLimited(clientIp(event))) {

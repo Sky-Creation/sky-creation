@@ -131,7 +131,6 @@
 
   var status = form.querySelector('.form-status');
   var submit = form.querySelector('button[type="submit"]');
-  var startedAt = Date.now();
 
   function setStatus(message, state) {
     if (!status) return;
@@ -143,23 +142,12 @@
   form.addEventListener('submit', function (event) {
     event.preventDefault();
 
-    // Bots fill hidden fields instantly; humans take more than a second.
-    var elapsed = Date.now() - startedAt;
-    if (elapsed < 1200) {
-      setStatus('Message sent. We will reply within one business day.', 'success');
-      form.reset();
-      startedAt = Date.now();
-      return;
-    }
-
     var data = {
       name: form.elements.name.value.trim(),
       email: form.elements.email.value.trim(),
       subject: form.elements.subject.value.trim(),
       message: form.elements.message.value.trim(),
-      company: form.elements.company.value.trim(),
-      // Server-side duplicate of the local timing check.
-      startedAt: startedAt
+      company: form.elements.company.value.trim()
     };
 
     if (!data.name || !data.email || !data.message) {
