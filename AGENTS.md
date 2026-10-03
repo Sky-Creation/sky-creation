@@ -216,7 +216,7 @@ explicitly and verified working. Changing them breaks a working mail path.
 | Deploy automation | Not set up. Linking the repo to Netlify, or adding a deploy hook, would make CI publish. Ask before doing it. |
 | `SPACESHIP_API_KEY` / `SPACESHIP_API_SECRET` | Provided for the cutover; do **not** commit. Prefer GitHub Actions secrets if the DNS watch `--control-plane` check should use them. |
 | `Sky-Creation/zz-write-probe` | Stray private repo from earlier diagnostics. Needs manual deletion; GitHub API writes were failing intermittently. |
-| Org default permission | The `Sky-Creation` org's `default_repository_permission` was changed from `read` to `write` during diagnostics. Revert if unintended. |
+| Org default permission | Reverted to `read` (was temporarily `write` during diagnostics). |
 
 **Unverified claim:** Brevo returns `{"ok":true}` and accepts mail, but Netlify's
 log API is not available with the current token, so honeypot discards have never
