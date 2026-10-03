@@ -23,13 +23,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -46,7 +46,9 @@ jobs:
         # was not, so both halves are tested rather than eyeballed.
         run: |
           set -euo pipefail
-          node --test site/test/
+          # Expanded by the shell rather than passed as a quoted glob, so this
+          # does not depend on how the runner's Node handles glob patterns.
+          node --test site/test/*.test.mjs
 
       - name: Test the DNS doctor parsers
         run: python3 -m unittest discover -s infra -v
