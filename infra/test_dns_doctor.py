@@ -285,5 +285,64 @@ class TestDigZoneRouting(unittest.TestCase):
         self.assertEqual(d.zone, "skycreation.dev")
 
 
+class TestIsBrevoVerification(unittest.TestCase):
+    """Brevo publishes brevo-code:<hash>, not the older brevo-site-verification."""
+
+    def test_accepts_live_record(self):
+        self.assertTrue(
+            dns_doctor.is_brevo_verification(
+                "brevo-code:97bdfb4a527efcbef05888bab52e6041"
+            )
+        )
+
+    def test_accepts_legacy_style_too(self):
+        # Kept working in case an older dashboard ever writes this form.
+        self.assertTrue(
+            dns_doctor.is_brevo_verification("brevo-site-verification=abc123")
+        )
+
+    def test_is_case_insensitive_and_trims(self):
+        self.assertTrue(dns_doctor.is_brevo_verification("  BREVO-CODE:abc  "))
+
+    def test_rejects_spf(self):
+        self.assertFalse(
+            dns_doctor.is_brevo_verification("v=spf1 include:spf.efwd.spaceship.net ~all")
+        )
+
+    def test_rejects_dkim_and_unrelated(self):
+        self.assertFalse(dns_doctor.is_brevo_verification(BREVO_DKIM))
+        self.assertFalse(dns_doctor.is_brevo_verification("google-site-verification=x"))
+        self.assertFalse(dns_doctor.is_brevo_verification(""))
+
+
+class TestCheckBrevoVerification(unittest.TestCase):
+    def _run(self, txts):
+        class D:
+            def txt(self, name):
+                return txts
+
+        doc = dns_doctor.Doctor("skycreation.dev")
+        dns_doctor.check_brevo_verification(doc, D())
+        return doc
+
+    def test_live_apex_records_pass(self):
+        # Exactly what the apex serves today.
+        doc = self._run(
+            [
+                "v=spf1 include:spf.efwd.spaceship.net ~all",
+                "brevo-code:97bdfb4a527efcbef05888bab52e6041",
+            ]
+        )
+        self.assertFalse(doc.warned)
+        self.assertEqual(doc.findings[0].level, dns_doctor.PASS)
+
+    def test_absent_is_a_warning_not_a_failure(self):
+        # Sender identity being unconfirmed is worth flagging, but it does not
+        # mean the mail path is broken, so it must not fail the run.
+        doc = self._run(["v=spf1 include:spf.efwd.spaceship.net ~all"])
+        self.assertTrue(doc.warned)
+        self.assertFalse(doc.failed)
+
+
 if __name__ == "__main__":
     unittest.main()

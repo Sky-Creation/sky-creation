@@ -478,6 +478,18 @@ def follow_txt_chain(dig: Dig, name: str, max_hops: int = 5) -> tuple[list[str],
     return [], current
 
 
+def is_brevo_verification(txt: str) -> bool:
+    """True if a TXT value is Brevo's domain-verification token.
+
+    Brevo publishes it as ``brevo-code:<hash>``. Looking for a
+    "brevo-site-verification" string instead, which is the older style and not
+    what the dashboard actually creates, reported a verified sender as unverified.
+    The legacy form is still accepted so an older dashboard keeps passing.
+    """
+    value = txt.strip().lower()
+    return value.startswith("brevo-code:") or value.startswith("brevo-site-verification=")
+
+
 def check_dkim(doc: Doctor, dig: Dig) -> None:
     """Brevo installs its own DKIM selectors; they are what signs contact-form mail."""
     found = []
@@ -499,7 +511,7 @@ def check_dkim(doc: Doctor, dig: Dig) -> None:
 
 def check_brevo_verification(doc: Doctor, dig: Dig) -> None:
     """Brevo's domain-verification TXT proves the sender identity is confirmed."""
-    matches = [t for t in dig.txt(doc.domain) if "brevo-site-verification" in t.lower()]
+    matches = [t for t in dig.txt(doc.domain) if is_brevo_verification(t)]
     if matches:
         doc.ok("brevo-verification", "Brevo domain verification TXT present")
     else:
