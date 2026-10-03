@@ -13,10 +13,7 @@ form, GitHub Actions for DNS monitoring, Spaceship for DNS.
 
 ```
 netlify.toml                        Netlify build config (root, so it is found)
-maintenance/                        Published directory while the site is being finished
-  index.html                        "Coming soon" page
-  assets/favicon.svg
-site/                               The finished site (not published yet)
+site/                                The published site
   index.html                        Landing
   about.html                        Studio and founder
   work.html                         Project catalogue
@@ -27,48 +24,65 @@ site/                               The finished site (not published yet)
   assets/posts.js                   Facebook post lists
   assets/favicon.svg
   functions/contact.mjs             Netlify Function -> Brevo
+  test/                             Node tests for the form, client and server
+maintenance/                        Emergency fallback, not published
+  index.html                        "Coming soon" page
+  assets/favicon.svg
 infra/
   dns_doctor.py                     Read-only DNS health check
+  test_dns_doctor.py                Parser tests
 .github/workflows/
   dns-watch.yml                     Nightly DNS check
-  check.yml                         Syntax + link check on every push
+  check.yml                         Tests, syntax and link check on every push
 ```
 
-There is no build step. Edit a file, push, Netlify redeploys.
+There is no build step.
 
 ## Which site is live
 
-`netlify.toml` sets `publish = "maintenance"`, so the live site is the
-"coming soon" page and every other address redirects to
-[founder.skycreation.dev](https://founder.skycreation.dev).
+`netlify.toml` sets `publish = "site"`, so the finished site is live.
 
-To publish the finished site instead, change one line:
+`maintenance/` is kept in the repository but deliberately not published. To
+take the site down to the "coming soon" page, change one line and deploy:
 
 ```toml
-publish = "site"
+publish = "maintenance"
 ```
 
-and delete the `[[redirects]]` block in the same file. The redirect rules
-currently sit after the publish setting, so a stale copy is harmless, but
-removing it keeps the config honest.
-
-The contact function stays deployed either way, so the mail path is live and
-testable while the rest of the site waits. The maintenance page has no form,
-so `/api/contact` is reachable but nothing on the page submits to it.
+```sh
+netlify deploy --dir=maintenance --prod
+```
 
 ### Deploying from the CLI
+
+Deploys are manual: this repository is not linked to Netlify, so pushing does
+not publish anything.
 
 `--dir` overrides `[build] publish`. Passing the repository root uploads the
 whole tree and the site 404s at `/`, because there is no `index.html` at the
 top level. Point `--dir` at the directory you actually want published:
 
 ```sh
-netlify deploy --dir=maintenance --prod     # the coming-soon page
-netlify deploy --dir=site --prod            # the finished site
+netlify deploy --dir=site --prod             # the live site
+netlify deploy --dir=maintenance --prod      # the coming-soon fallback
 ```
 
 The functions directory still comes from `netlify.toml`, so the contact
 function is deployed with either command.
+
+## Checks
+
+Run these before pushing; CI runs the same commands.
+
+```sh
+node --test site/test/*.test.mjs      # contact form, client and server
+python3 -m unittest discover -s infra # DNS record parsers
+```
+
+`site/test/` covers the contact form specifically because it once reported
+success for messages it never sent. A fast submission, a filled honeypot, a
+provider failure and a missing API key are each asserted, so the "sent"
+confirmation can only appear when a send was actually attempted.
 
 ## Deploy
 
@@ -114,7 +128,13 @@ function is deployed with either command.
 ## DNS monitoring
 
 `infra/dns_doctor.py` is read-only. It resolves records with `dig`, preferring
-the domain's own authoritative nameservers, and checks:
+the domain's own authoritative nameservers for names inside the zone, and
+falling back to a recursive resolver for anything delegated elsewhere. That
+distinction matters: Brevo publishes DKIM as a two-hop CNAME chain, and the
+local authoritative servers know nothing about the `brevo.com` end of it, so
+asking them returns nothing at all.
+
+It checks:
 
 - delegation and nameservers
 - inbound mail: MX and SPF for Spaceship forwarding
@@ -133,9 +153,10 @@ python3 infra/dns_doctor.py --control-plane    # also read the Spaceship API
 environment. It only ever reads. Exit codes: `0` healthy (warnings allowed),
 `1` at least one failure, `2` could not run.
 
-The scheduled workflow runs nightly and on demand from the Actions tab. It
-needs the same two Spaceship secrets under **Settings -> Secrets and variables
--> Actions**.
+The scheduled workflow runs nightly and on demand from the Actions tab. On
+failure it files or updates a single tracking issue rather than piling up new
+ones, and closes that issue when DNS recovers. The two Spaceship secrets are
+only needed for the optional cross-check; without them the rest still runs.
 
 ## Secrets
 
@@ -153,9 +174,15 @@ The contact function logs provider errors without ever printing the API key.
 
 - Company, services, projects, founder: `site/*.html`
 - Mathematics pages and social links: `site/math.html`
+- Facebook posts: `site/assets/posts.js`. Both lists start empty; a section
+  with no posts is hidden rather than shown as a bare heading.
 - Contact addresses: `site/contact.html` and the `CONTACT_TO` / `CONTACT_FROM`
   Netlify variables — keep the visible address and the receiving address
   consistent, otherwise mail will be sent to somewhere nobody reads.
+
+Links between pages are root-relative and extensionless (`/about`, not
+`/about.html`): Netlify serves both, but only the extensionless form is the
+canonical address.
 
 ## Licence
 
