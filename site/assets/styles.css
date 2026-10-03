@@ -171,6 +171,24 @@ a:hover {
   color: var(--text);
 }
 
+/* The founder portfolio is a separate site on another subdomain, not a page of
+   this one. It is marked so nobody expects to stay on skycreation.dev. */
+.site-nav .nav-external {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  color: var(--accent-2);
+}
+
+.site-nav .nav-external:hover {
+  color: var(--accent-2);
+  text-decoration: underline;
+}
+
+.nav-external-mark {
+  font-size: 0.85em;
+}
+
 .nav-toggle {
   display: none;
   background: transparent;
