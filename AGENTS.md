@@ -69,7 +69,8 @@ python3 -m unittest discover -s infra   # 39 tests
 
 # Deploy (manual - see §4)
 netlify deploy --dir=site --prod
-netlify deploy --dir=site/founder --prod   # founder Netlify site only
+# Founder: use the founder config so the company contact function is not uploaded
+netlify deploy --dir=site/founder --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6 --config site/founder/netlify.toml
 
 # DNS check locally (needs dig)
 python3 infra/dns_doctor.py
@@ -91,15 +92,16 @@ deployed the site.
 ```sh
 netlify deploy --dir=. --prod              # BREAKS the company site: 404 at /
 netlify deploy --dir=site --prod           # company site
-netlify deploy --dir=site/founder --prod   # founder site (must be linked to that Netlify project)
+netlify deploy --dir=site/founder --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6 --config site/founder/netlify.toml
 ```
 
 Passing the repo root uploads the whole tree; there is no `index.html` at the
 top level, so `/` 404s on the company site. This has already happened once.
 
-Deploy the founder site only against the founder Netlify project. Deploying
-`site/founder` to the company site is wrong, and deploying `site` to the
-founder site is wrong.
+Deploy the founder site only against the founder Netlify project, and pass
+`--config site/founder/netlify.toml` so the root `functions = "site/functions"`
+line is not applied (otherwise the contact function is bundled onto the
+founder site too).
 
 ### Extensionless URLs are canonical
 

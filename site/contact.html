@@ -41,7 +41,14 @@
 
   <section class="section" id="form">
     <div class="form">
-      <form data-contact-form novalidate>
+      <form data-contact-form action="mailto:contact@skycreation.dev" method="post" enctype="text/plain" novalidate>
+        <noscript>
+          <p class="form-status" data-state="pending">
+            JavaScript is off, so this form opens your email app instead.
+            You can also write to
+            <a href="mailto:contact@skycreation.dev">contact@skycreation.dev</a>.
+          </p>
+        </noscript>
         <div class="field">
           <label for="name">Name</label>
           <input type="text" id="name" name="name" autocomplete="name" maxlength="120" required>

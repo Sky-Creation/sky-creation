@@ -151,11 +151,11 @@ Source: `site/founder/`. Netlify site ID `b851f1db-a2f0-4f67-81aa-6798f5296ab6`
 (`sky-creation-founder`), custom domain `founder.skycreation.dev`:
 
 ```sh
-netlify deploy --dir=site/founder --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6
+netlify deploy --dir=site/founder --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6 --config site/founder/netlify.toml
 ```
 
-`waiyantunoo.github.io` keeps a bounce page to the branded URL. Project demos
-stay on their `github.io/<repo>/` paths.
+Pass `--config site/founder/netlify.toml` so the company contact function is
+not bundled onto the founder site.
 
 ## DNS monitoring
 
