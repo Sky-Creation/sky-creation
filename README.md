@@ -9,6 +9,8 @@ keeps the domain healthy.
 Everything here is free-tier only: Netlify for hosting, Brevo for the contact
 form, GitHub Actions for DNS monitoring, Spaceship for DNS.
 
+If you are an AI agent or picking this up cold, read [AGENTS.md](AGENTS.md) first.
+
 ## Layout
 
 ```
