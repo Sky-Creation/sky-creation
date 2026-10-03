@@ -123,5 +123,71 @@ class TestAsdictAvailable(unittest.TestCase):
         self.assertEqual(levels, {"PASS", "FAIL", "WARN"})
 
 
+class FakeDig:
+    """Records keyed by (name, type), as a real resolver would answer them."""
+
+    def __init__(self, records):
+        self.records = records
+
+    def txt(self, name):
+        return self.records.get((name.lower(), "TXT"), [])
+
+    def cname(self, name):
+        return self.records.get((name.lower(), "CNAME"), [])
+
+
+class TestCheckDkim(unittest.TestCase):
+    """Brevo delegates DKIM by CNAME, so the key is only at the far end."""
+
+    S1 = "brevo1._domainkey.skycreation.dev"
+    S2 = "brevo2._domainkey.skycreation.dev"
+    T1 = "b1.skycreation-dev.dkim.brevo.com"
+    T2 = "b2.skycreation-dev.dkim.brevo.com"
+
+    def doc(self):
+        return dns_doctor.Doctor("skycreation.dev")
+
+    def both(self):
+        """Both selectors delegated, which is how Brevo publishes them."""
+        return FakeDig(
+            {
+                (self.S1, "CNAME"): [self.T1],
+                (self.T1, "TXT"): [BREVO_DKIM],
+                (self.S2, "CNAME"): [self.T2],
+                (self.T2, "TXT"): [BREVO_DKIM],
+            }
+        )
+
+    def test_follows_cname_to_brevo_and_passes(self):
+        # This is the live shape: no TXT at the selector, a CNAME, and the key
+        # published at the alias target. The check previously failed here.
+        doc = self.doc()
+        dns_doctor.check_dkim(doc, self.both())
+
+        fails = [f for f in doc.findings if f.level == dns_doctor.FAIL]
+        self.assertEqual(fails, [], f"expected no failures, got {[f.detail for f in fails]}")
+        self.assertFalse(doc.failed)
+        self.assertTrue(any(self.T1 in f.detail for f in doc.findings))
+
+    def test_direct_txt_key_passes(self):
+        dig = FakeDig({(self.S1, "TXT"): [BREVO_DKIM], (self.S2, "TXT"): [BREVO_DKIM]})
+        doc = self.doc()
+        dns_doctor.check_dkim(doc, dig)
+        self.assertFalse(doc.failed)
+
+    def test_cname_present_but_target_has_no_key_fails(self):
+        # A dangling alias is not a working signature; it must still be a FAIL
+        # rather than being waved through because a CNAME exists.
+        dig = FakeDig({(self.S1, "CNAME"): [self.T1]})
+        doc = self.doc()
+        dns_doctor.check_dkim(doc, dig)
+        self.assertTrue(doc.failed)
+
+    def test_nothing_at_all_fails(self):
+        doc = self.doc()
+        dns_doctor.check_dkim(doc, FakeDig({}))
+        self.assertTrue(doc.failed)
+
+
 if __name__ == "__main__":
     unittest.main()

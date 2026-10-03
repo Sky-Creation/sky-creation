@@ -432,14 +432,28 @@ def is_dkim_record(txt: str) -> bool:
 
 
 def check_dkim(doc: Doctor, dig: Dig) -> None:
-    """Brevo installs its own DKIM selectors; they are what signs contact-form mail."""
+    """Brevo installs its own DKIM selectors; they are what signs contact-form mail.
+
+    Brevo delegates the key rather than publishing it here: the selector is a
+    CNAME to brevoN.dkim.brevo.com, and the key lives at the far end of that
+    alias. Asking the local name for TXT alone therefore finds nothing, so the
+    alias is followed and the key is read where it actually is.
+    """
     found = []
     for selector in BREVO_DKIM_SELECTORS:
         fqdn = f"{selector}._domainkey.{doc.domain}"
-        if [t for t in dig.txt(fqdn) if is_dkim_record(t)]:
-            found.append(selector)
-        elif dig.cname(f"{selector}._domainkey"):
-            found.append(f"{selector} (CNAME)")
+        records = dig.txt(fqdn)
+        target = None
+
+        if not [t for t in records if is_dkim_record(t)]:
+            # No key published directly here; look through the CNAME chain.
+            aliases = dig.cname(fqdn)
+            if aliases:
+                target = aliases[0]
+                records = dig.txt(target)
+
+        if [t for t in records if is_dkim_record(t)]:
+            found.append(f"{selector} via {target}" if target else selector)
         else:
             doc.fail(
                 "dkim-brevo",
