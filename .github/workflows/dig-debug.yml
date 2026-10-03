@@ -1,0 +1,42 @@
+name: dig-debug
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dig
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dnsutils
+
+      - name: Exercise the real code path
+        run: |
+          python3 - <<'PY'
+          import importlib.util, sys
+          spec = importlib.util.spec_from_file_location("dns_doctor", "infra/dns_doctor.py")
+          m = importlib.util.module_from_spec(spec)
+          sys.modules["dns_doctor"] = m
+          spec.loader.exec_module(m)
+
+          dig = m.Dig()
+          fqdn = "brevo1._domainkey.skycreation.dev"
+
+          print("nameservers:", dig.nameservers)
+          print("raw TXT   :", dig.query(fqdn, "TXT"))
+          print("txt()     :", [t[:40] for t in dig.txt(fqdn)])
+          print("cname()   :", dig.cname(fqdn))
+
+          records, target = m.follow_txt_chain(dig, fqdn)
+          print("chain ->", target)
+          print("found key:", bool([t for t in records if m.is_dkim_record(t)]))
+          for t in records:
+              print("  is_dkim:", m.is_dkim_record(t), "|", t[:50])
+
+          print("--- direct TXT at the final name ---")
+          print("brevo5 TXT:", [t[:40] for t in dig.txt("brevo5.dkim.brevo.com")])
+          print("brevo5 is_dkim:", [m.is_dkim_record(t) for t in dig.txt("brevo5.dkim.brevo.com")])
+          PY
