@@ -35,6 +35,25 @@
         toggle.setAttribute('aria-expanded', 'false');
       }
     });
+
+    // Escape closes and hands focus back to the toggle. Without the focus()
+    // call a keyboard user loses their place when the menu disappears.
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape' || nav.getAttribute('data-open') !== 'true') return;
+      nav.setAttribute('data-open', 'false');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.focus();
+    });
+
+    // Clicking the page behind the open menu closes it. The toggle is
+    // excluded because it manages its own state and would otherwise flip
+    // twice in one click.
+    document.addEventListener('click', function (event) {
+      if (nav.getAttribute('data-open') !== 'true') return;
+      if (nav.contains(event.target) || toggle.contains(event.target)) return;
+      nav.setAttribute('data-open', 'false');
+      toggle.setAttribute('aria-expanded', 'false');
+    });
   }
 
   // --- Facebook posts ----------------------------------------------------
@@ -105,6 +124,17 @@
   var status = form.querySelector('.form-status');
   var submit = form.querySelector('button[type="submit"]');
 
+  // Honeypot: disable it once the page has loaded so autofill and password
+  // managers cannot populate it after JS runs. The value is still read and
+  // forwarded below on purpose: a bot that fills it without running JS must be
+  // visible to the server, and clearing it here would hide that.
+  var honeypot = form.elements.company;
+  if (honeypot) honeypot.disabled = true;
+
+  // Mirrors the server's check. The server is still the authority - this only
+  // spares a visitor a round trip that was always going to come back as a 400.
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
   function setStatus(message, state) {
     if (!status) return;
     status.textContent = message;
@@ -125,6 +155,11 @@
 
     if (!data.name || !data.email || !data.message) {
       setStatus('Please fill in your name, email and message.', 'error');
+      return;
+    }
+
+    if (!EMAIL_RE.test(data.email)) {
+      setStatus('Please enter a valid email address.', 'error');
       return;
     }
 

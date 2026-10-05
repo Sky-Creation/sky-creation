@@ -23,6 +23,11 @@ const MAX_NAME = 120;
 const MAX_EMAIL = 200;
 const MAX_SUBJECT = 150;
 const MAX_MESSAGE = 4000;
+// Largest request body we will even look at. Far above what the form can
+// produce (~4.5 KB of fields with the caps above), so it never rejects a real
+// message, and small enough that an oversized payload is refused before any
+// parsing or allocation happens.
+const MAX_BODY_BYTES = 16 * 1024;
 const RATE_LIMIT = { max: 5, windowMs: 10 * 60 * 1000 };
 
 /** Per warm-instance memory, so limits are approximate across a fleet. */
@@ -93,6 +98,16 @@ function clean(value, max) {
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return respond(405, { error: 'Method not allowed' });
+  }
+
+  // Refuse oversized bodies before touching them. This is the only defence
+  // that has to run first: everything below reads, parses or copies the body.
+  // If Netlify base64-encoded the request the length over-reports slightly,
+  // which only makes the check more conservative.
+  const raw = typeof event.body === 'string' ? event.body : '';
+  if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) {
+    console.log('contact: request body too large, discarded');
+    return respond(413, { error: 'Message too large. Please shorten it.' });
   }
 
   const apiKey = process.env.BREVO_API_KEY;

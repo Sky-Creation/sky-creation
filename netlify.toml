@@ -7,13 +7,19 @@
 # is the documented way to take the site down if it ever has to be.
 #
 # The founder portfolio lives at site/founder/ and is a separate Netlify site
-# (founder.skycreation.dev). Deploy it with:
-#   netlify deploy --dir=site/founder --prod
-# against that site. Do not rely on this file's publish = "site" for founder.
+# (founder.skycreation.dev). Deploy it from INSIDE its directory, so that
+# site/founder/netlify.toml is the config that gets picked up:
+#   cd site/founder
+#   netlify deploy --dir=. --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6
+#
+# Do not run this from the repo root. netlify-cli has no --config flag (it was
+# documented here for a while and never existed), and running from the root
+# reads THIS file: it would bundle functions/ onto the founder site and apply
+# the /founder 301s below to the founder site itself.
 
 [build]
   publish = "site"
-  functions = "site/functions"
+  functions = "functions"
 
 [build.environment]
   NODE_VERSION = "22"
@@ -102,3 +108,18 @@
   for = "/founder/*"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# Belt and suspenders: these directories live at the repo root and are never
+# published, but if anyone moves them back under site/ these rules refuse to
+# serve them. The target is site/404.html, the site's real 404 page.
+[[redirects]]
+  from = "/test/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/functions/*"
+  to = "/404.html"
+  status = 404
+  force = true

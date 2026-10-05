@@ -46,7 +46,7 @@
       "alternateName": ["Sky", "刘炳川"],
       "url": "https://founder.skycreation.dev/",
       "image": "https://founder.skycreation.dev/images/og-image.jpg",
-      "email": "mailto:waiyan96174@gmail.com",
+      "email": "founder@skycreation.dev",
       "jobTitle": "Freelance Accountant",
       "address": {
         "@type": "PostalAddress",
@@ -129,15 +129,23 @@
         }
         
         /* --- Mobile Menu --- */
+        /* visibility is what actually removes the closed panel from the tab
+           order. max-height/opacity alone leave all six links focusable while
+           the menu looks closed, so a keyboard user tabs through invisible
+           links. visibility transitions asymmetrically: it flips to visible at
+           once when opening, and only after the close animation when closing,
+           so the collapse still animates. */
         #mobile-menu {
-            transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
+            transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out, visibility 0.3s;
             max-height: 0;
             opacity: 0;
             overflow: hidden;
+            visibility: hidden;
         }
         #mobile-menu.open {
             max-height: 400px;
             opacity: 1;
+            visibility: visible;
         }
         
         /* --- Scrollbar --- */
@@ -222,7 +230,7 @@
                     A versatile professional standing at the intersection of modern finance and advanced technology. I work as a Freelance Accountant (ACCA Diploma / LCCI) while building financial software — with hands-on experience in financial &amp; management reporting, inventory &amp; COGS analysis, and tools like Xero and QuickBooks. My passion lies in building scalable systems—whether financial frameworks or software applications—that solve real-world problems.
                 </p>
                 <div class="hero-anim flex flex-wrap gap-4 justify-center md:justify-start mt-8">
-                    <a href="https://www.linkedin.com/in/waiyantunoo/" target="_blank" class="bg-blue-700 text-white font-bold py-3 px-8 rounded-full text-lg hover:bg-blue-800 transition-transform duration-300 hover:scale-105 shadow-lg shadow-blue-500/30 flex items-center">
+                    <a href="https://www.linkedin.com/in/waiyantunoo/" target="_blank" rel="noopener noreferrer" class="bg-blue-700 text-white font-bold py-3 px-8 rounded-full text-lg hover:bg-blue-800 transition-transform duration-300 hover:scale-105 shadow-lg shadow-blue-500/30 flex items-center">
                         <i class="fab fa-linkedin mr-2"></i> LinkedIn
                     </a>
                 </div>
@@ -509,7 +517,7 @@
                     <div class="flex flex-col md:flex-row justify-between mb-4">
                         <div>
                             <h3 class="text-xl font-bold text-gray-800">Founder & Lead Developer</h3>
-                            <a href="https://web.facebook.com/skycreationinnovations" target="_blank" class="text-blue-600 font-semibold hover:underline">Sky Creation Innovations</a>
+                            <a href="https://web.facebook.com/skycreationinnovations" target="_blank" rel="noopener noreferrer" class="text-blue-600 font-semibold hover:underline">Sky Creation Innovations</a>
                         </div>
                         <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full h-fit mt-2 md:mt-0 font-medium">2020 - Present</span>
                     </div>
@@ -915,7 +923,7 @@
                 I'm always excited to connect with new people and explore opportunities. Based in Huai Khwang, Bangkok.
             </p>
             <div class="reveal flex flex-col items-center gap-4" data-animation="fade-in">
-                <a href="mailto:waiyan96174@gmail.com" class="bg-accent text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-accent-dark transition-all">
+                <a href="mailto:founder@skycreation.dev" class="bg-accent text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-accent-dark transition-all">
                     <i class="fas fa-envelope mr-2" aria-hidden="true"></i> Send an Email
                 </a>
                 <p class="text-gray-500 text-sm">Huai Khwang, Bangkok · Open to accounting and finance opportunities</p>
@@ -945,6 +953,10 @@
             const setMenu = (open) => {
                 menu.classList.toggle('open', open);
                 btn.setAttribute('aria-expanded', String(open));
+                // The accessible name has to follow the state, otherwise a
+                // screen reader announces "Close menu" on a menu that is
+                // already closed.
+                btn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
             };
 
             window.closeMenu = () => setMenu(false);
@@ -957,8 +969,22 @@
                 link.addEventListener('click', () => setMenu(false));
             });
 
+            // Escape closes and puts focus back where it came from; without
+            // the focus() call the menu vanishes from under a keyboard user
+            // who is then stranded at the top of the document.
             document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') setMenu(false);
+                if (e.key === 'Escape' && menu.classList.contains('open')) {
+                    setMenu(false);
+                    btn.focus();
+                }
+            });
+
+            // Tapping the page behind the menu closes it. Skip when the tap
+            // was on the toggle itself, which handles its own state.
+            document.addEventListener('click', (e) => {
+                if (!menu.classList.contains('open')) return;
+                if (menu.contains(e.target) || btn.contains(e.target)) return;
+                setMenu(false);
             });
 
             if (reduceMotion || typeof anime === 'undefined') {

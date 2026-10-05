@@ -15,18 +15,23 @@ If you are an AI agent or picking this up cold, read [AGENTS.md](AGENTS.md) firs
 
 ```
 netlify.toml                        Company-site Netlify config (repo root)
+functions/                          Netlify Function -> Brevo. NOT published
+  contact.mjs                       (lives outside site/ on purpose - see AGENTS.md)
+test/                               Node tests for the form, client and server. NOT published
+  main.test.mjs
+  contact.test.mjs
 site/                                Company site publish root
   index.html                        Landing
   about.html                        Studio and founder
   work.html                         Project catalogue
   math.html                         A Noob Mathematician
   contact.html                      Contact form
+  404.html                          Real 404 page (also the target of the deny rules)
+  robots.txt, sitemap.xml
   assets/styles.css                 All styling
   assets/main.js                    Nav, footer year, contact form
   assets/posts.js                   Facebook post lists
   assets/favicon.svg
-  functions/contact.mjs             Netlify Function -> Brevo
-  test/                             Node tests for the form, client and server
   founder/                          Founder portfolio (separate Netlify site)
     index.html                      Portfolio (Tailwind CDN)
     images/                         Profile and OG images
@@ -70,38 +75,65 @@ whole tree and the site 404s at `/`, because there is no `index.html` at the
 top level. Point `--dir` at the directory you actually want published:
 
 ```sh
-netlify deploy --dir=site --prod             # company site (skycreation.dev)
-netlify deploy --dir=site/founder --prod     # founder portfolio (founder.skycreation.dev)
-netlify deploy --dir=maintenance --prod      # the coming-soon fallback
+# company site (skycreation.dev)
+netlify deploy --dir=site --prod
+
+# founder portfolio (founder.skycreation.dev). Run it FROM site/founder so
+# that directory's netlify.toml is the one discovered - netlify-cli has no
+# --config flag - and name the project, because the CLI's local link points
+# at the company site.
+cd site/founder
+netlify deploy --dir=. --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6
+cd ../..
+
+# the coming-soon fallback
+netlify deploy --dir=maintenance --prod
 ```
 
-Use the Netlify site that matches the content: company site for `site`, founder
-site for `site/founder`. `--dir` overrides `[build] publish`. Passing the
-repository root uploads the whole tree and the company site 404s at `/`.
+Do not deploy the founder site from the repository root. The root
+`netlify.toml` would be picked up instead, which bundles `functions/` onto the
+founder project and applies the root `/founder` 301 redirects to the founder
+site itself.
 
-The company functions directory still comes from the root `netlify.toml`, so
-the contact function is deployed with the company-site command.
+`.netlify/state.json` is gitignored, so a fresh clone has no site linked — pass
+`--site 19485f7b-5cc0-426e-a8a0-4ad43a5ea66a` for the company site if the CLI
+cannot work it out.
+
+The contact function is declared in the root `netlify.toml`
+(`functions = "functions"`), so it is uploaded by the company-site command.
 
 ## Checks
 
 Run these before pushing; CI runs the same commands.
 
 ```sh
-node --test site/test/*.test.mjs      # contact form, client and server
+node --test test/*.test.mjs           # contact form, client and server
 python3 -m unittest discover -s infra # DNS record parsers
 ```
 
-`site/test/` covers the contact form specifically because it once reported
+`test/` covers the contact form specifically because it once reported
 success for messages it never sent. A fast submission, a filled honeypot, a
 provider failure and a missing API key are each asserted, so the "sent"
 confirmation can only appear when a send was actually attempted.
 
 ## Deploy
 
-1. Create the GitHub repository and push this tree.
-2. In Netlify: **Add new site -> Import an existing project**, pick the repo.
-   Netlify reads `netlify.toml`, so no manual build settings are needed.
-3. In Netlify **Site settings -> Environment variables**, set:
+Deploys are manual CLI calls (see **Deploying from the CLI** above). The GitHub
+repository is deliberately **not** linked to Netlify, so pushing never publishes
+anything — do not follow Netlify's "Import an existing project" flow, because
+that is what links the repo and turns a push into a deploy.
+
+To publish from a fresh clone:
+
+```sh
+netlify login   # once per machine
+netlify deploy --dir=site --prod --site 19485f7b-5cc0-426e-a8a0-4ad43a5ea66a
+```
+
+The Netlify site itself already exists; nothing here has to be created. What a
+deploy does need:
+
+1. In Netlify **Site settings -> Environment variables**, set:
 
    | Variable | Value |
    | --- | --- |
@@ -128,8 +160,8 @@ confirmation can only appear when a send was actually attempted.
    server-side: the function reads it from the environment and it is never
    bundled into the deployed site.
 
-4. In Brevo, verify the sending domain so DKIM is signed.
-5. In Netlify **Domain settings**, add `skycreation.dev`. Netlify then shows the
+2. In Brevo, verify the sending domain so DKIM is signed.
+3. In Netlify **Domain settings**, add `skycreation.dev`. Netlify then shows the
    exact apex and `www` records it needs — copy those values into Spaceship
    rather than guessing them, because Netlify's apex record differs by setup.
 
@@ -141,21 +173,25 @@ confirmation can only appear when a send was actually attempted.
    `waiyantunoo.github.io` — that redirects every `github.io/*` path onto the
    founder host and breaks the visualiser project sites.
 
-6. Turn off the **Powered by Netlify** badge (company and founder projects):
+4. Turn off the **Powered by Netlify** badge (company and founder projects):
    Project configuration → General → Powered by Netlify badge → off → Save.
    Already done via API (`built_with_badge_enabled: false`).
 
 ### Founder portfolio deploy
 
 Source: `site/founder/`. Netlify site ID `b851f1db-a2f0-4f67-81aa-6798f5296ab6`
-(`sky-creation-founder`), custom domain `founder.skycreation.dev`:
+(`sky-creation-founder`), custom domain `founder.skycreation.dev`. The command
+is in **Deploying from the CLI** above: run it from inside `site/founder` and
+always pass `--site`.
 
-```sh
-netlify deploy --dir=site/founder --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6 --config site/founder/netlify.toml
-```
+**`netlify deploy` has no `--config` flag** (netlify-cli 27.10.2). Older notes
+in this repo told you to pass `--config site/founder/netlify.toml`; the CLI
+rejects the flag with `unknown option`. Config selection comes from the working
+directory, which is why the command `cd`s first. If you find another one-liner
+in this repo that passes `--config`, it is broken and has never worked.
 
-Pass `--config site/founder/netlify.toml` so the company contact function is
-not bundled onto the founder site.
+Setting the project's **Base directory** to `site/founder` in the Netlify
+dashboard makes the same file authoritative for builds started there.
 
 ## DNS monitoring
 
@@ -211,6 +247,11 @@ The contact function logs provider errors without ever printing the API key.
 - Contact addresses: `site/contact.html` and the `CONTACT_TO` / `CONTACT_FROM`
   Netlify variables — keep the visible address and the receiving address
   consistent, otherwise mail will be sent to somewhere nobody reads.
+- Portfolio address: `site/founder/index.html`, two places — the JSON-LD
+  `email` field (a bare address, no `mailto:` prefix, or schema.org rejects it)
+  and the visible mailto button. Both are `founder@skycreation.dev`, a verified
+  Brevo sender. That page has no form, so no Netlify variable changes with it;
+  it needs a founder-site deploy to go live.
 
 Links between pages are root-relative and extensionless (`/about`, not
 `/about.html`): Netlify serves both, but only the extensionless form is the

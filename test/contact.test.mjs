@@ -5,7 +5,7 @@
  * message is handed to the mail provider, or the visitor is given an error
  * they can act on. The only success-without-sending path is the honeypot.
  *
- * Run: node --test site/test/
+ * Run: node --test test/*.test.mjs
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -184,4 +184,48 @@ test('the API key is never echoed into the email body', async () => {
   await handler(ok());
 
   assert.ok(!JSON.stringify(sent[0].body).includes('super-secret-key'));
+});
+
+// The size guard has to run before JSON.parse, otherwise a megabyte of junk is
+// allocated and parsed just to be thrown away. It must also be a refusal the
+// caller can see, not a 500.
+test('an oversized body is refused before it is parsed', async () => {
+  const { handler, sent, logs } = await load();
+  const res = await handler(ok({ body: 'x'.repeat(64 * 1024) }));
+
+  assert.equal(res.statusCode, 413, 'a too-large request is a 413, not a 500');
+  assert.equal(sent.length, 0, 'nothing is emailed');
+  assert.ok(
+    logs.some((l) => l.includes('too large')),
+    'the discard is logged like the honeypot is'
+  );
+});
+
+// The cap sits far above what the form can send, so a legitimately long
+// message (4000-character body plus name/email/subject) still goes through.
+test('a message at the field caps is still accepted', async () => {
+  const { handler, sent } = await load();
+  const res = await handler(
+    ok({
+      body: JSON.stringify({
+        name: 'A'.repeat(120),
+        email: 'ada@example.com',
+        subject: 'S'.repeat(150),
+        message: 'M'.repeat(4000),
+      }),
+    })
+  );
+
+  assert.equal(res.statusCode, 200, 'the guard must not reject a real message');
+  assert.equal(sent.length, 1);
+});
+
+// A malformed but small body is still a 400, not a 413: size and syntax are
+// separate checks and neither may swallow the other.
+test('a small malformed body is still reported as invalid', async () => {
+  const { handler, sent } = await load();
+  const res = await handler(ok({ body: '{not json' }));
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(sent.length, 0);
 });

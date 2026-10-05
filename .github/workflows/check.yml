@@ -7,6 +7,8 @@ on:
       - "site/**"
       - "maintenance/**"
       - "infra/**"
+      - "test/**"
+      - "functions/**"
       - ".github/**"
       - "netlify.toml"
   pull_request:
@@ -14,6 +16,8 @@ on:
       - "site/**"
       - "maintenance/**"
       - "infra/**"
+      - "test/**"
+      - "functions/**"
       - ".github/**"
       - "netlify.toml"
   workflow_dispatch:
@@ -118,3 +122,68 @@ jobs:
             done
           done
           exit $missing
+
+      - name: Check the founder page
+        # The founder site is deployed separately, so nothing else in this
+        # workflow looks at it. Externally hosted URLs (the Tailwind and Font
+        # Awesome CDNs) are not fetched, same as everywhere else here; this only
+        # asserts the file is present and its self-referential metadata is
+        # correct, because those are what silently rot.
+        run: |
+          set -euo pipefail
+          for required in site/founder/index.html site/founder/netlify.toml \
+                          site/founder/robots.txt site/founder/sitemap.xml \
+                          site/founder/images/profile-picture.jpg; do
+            if [ ! -f "$required" ]; then
+              echo "missing: $required"
+              exit 1
+            fi
+          done
+
+          python3 - <<'PY'
+          import json, re, sys
+
+          html = open("site/founder/index.html", encoding="utf-8").read()
+
+          # Canonical and og:url must agree on the founder host, or search
+          # engines are told two different things about one page.
+          canonical = re.search(r'<link rel="canonical" href="([^"]+)"', html)
+          og_url = re.search(r'<meta property="og:url" content="([^"]+)"', html)
+          for name, match in (("canonical", canonical), ("og:url", og_url)):
+              if not match:
+                  sys.exit(f"founder page has no {name}")
+              if not match.group(1).startswith("https://founder.skycreation.dev"):
+                  sys.exit(f"founder {name} points elsewhere: {match.group(1)}")
+
+          # JSON-LD must parse, and schema.org wants a bare address: a
+          # "mailto:" prefix in email was shipped once and is invalid.
+          blocks = re.findall(
+              r'<script type="application/ld\+json">(.*?)</script>', html, re.S
+          )
+          if not blocks:
+              sys.exit("founder page has no JSON-LD")
+          for block in blocks:
+              data = json.loads(block)
+              email = data.get("email")
+              if email is not None and (email.startswith("mailto:") or "@" not in email):
+                  sys.exit(f"JSON-LD email is not a bare address: {email!r}")
+
+          # target="_blank" without rel="noopener" hands the opened page a
+          # handle on window.opener.
+          for tag in re.findall(r"<a\b[^>]*target=\"_blank\"[^>]*>", html):
+              if "noopener" not in tag:
+                  sys.exit(f"external link without noopener: {tag[:120]}")
+
+          # A visible contact address must match the JSON-LD one, otherwise the
+          # structured data advertises a mailbox nobody reads.
+          mailtos = set(re.findall(r'href="mailto:([^"]+)"', html))
+          ld_emails = set()
+          for block in blocks:
+              email = json.loads(block).get("email")
+              if email:
+                  ld_emails.add(email)
+          if ld_emails - mailtos:
+              sys.exit(f"JSON-LD email has no matching mailto link: {sorted(ld_emails - mailtos)}")
+
+          print("founder page OK")
+          PY

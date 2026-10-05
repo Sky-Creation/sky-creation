@@ -11,7 +11,7 @@
  * bot-triggered honeypot is the only path that reports success without
  * sending.
  *
- * Run: node --test site/test/
+ * Run: node --test test/*.test.mjs
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(join(here, '..', 'assets', 'main.js'), 'utf8');
+const source = readFileSync(join(here, '..', 'site', 'assets', 'main.js'), 'utf8');
 
 /**
  * Evaluate main.js against a minimal DOM.
@@ -187,4 +187,30 @@ test('a network failure surfaces an error and re-enables the button', async () =
     'the visitor is not left on a pending state'
   );
   assert.equal(submitBtn.disabled, false, 'the submit button is usable again');
+});
+
+// The server rejects a malformed address with a 400. Catching it here spares
+// the visitor the round trip, but the rule to protect is weaker than the
+// server's: this must never reject something the server would have accepted.
+test('a malformed email is rejected before any fetch', async () => {
+  const { submit, calls, settle } = load({ email: 'not-an-email' });
+  submit({ preventDefault() {} });
+  await settle();
+
+  assert.equal(calls.fetch.length, 0, 'an address the server would refuse must not be sent');
+  assert.ok(
+    calls.status.some(([, v]) => v === 'error'),
+    'the visitor is told the address is wrong'
+  );
+});
+
+// Autofill runs after the DOM is ready, so a honeypot left enabled can be
+// populated by a password manager and eat a real enquiry. Disabling it at load
+// closes that. The value must still be forwarded - see the test above - so
+// this only asserts the control is locked, not emptied.
+test('the honeypot input is disabled once the page has loaded', () => {
+  const { form } = load();
+
+  assert.equal(form.elements.company.disabled, true, 'the trap is locked to humans');
+  assert.equal(form.elements.company.value, '', 'it is not cleared, only disabled');
 });
