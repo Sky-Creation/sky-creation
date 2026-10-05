@@ -42,7 +42,7 @@ jobs:
       - name: Syntax-check the JavaScript
         run: |
           set -euo pipefail
-          for file in site/assets/*.js site/functions/*.mjs; do
+          for file in site/assets/*.js functions/*.mjs; do
             echo "checking $file"
             node --check "$file"
           done
@@ -54,7 +54,7 @@ jobs:
           set -euo pipefail
           # Expanded by the shell rather than passed as a quoted glob, so this
           # does not depend on how the runner's Node handles glob patterns.
-          node --test site/test/*.test.mjs
+          node --test test/*.test.mjs
 
       - name: Test the DNS doctor parsers
         run: python3 -m unittest discover -s infra -v
