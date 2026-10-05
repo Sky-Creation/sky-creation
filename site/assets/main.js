@@ -119,78 +119,79 @@
 
   // --- Contact form -------------------------------------------------------
   var form = document.querySelector('[data-contact-form]');
-  if (!form) return;
 
-  var status = form.querySelector('.form-status');
-  var submit = form.querySelector('button[type="submit"]');
+  if (form) {
+    var status = form.querySelector('.form-status');
+    var submit = form.querySelector('button[type="submit"]');
 
-  // Honeypot: disable it once the page has loaded so autofill and password
-  // managers cannot populate it after JS runs. The value is still read and
-  // forwarded below on purpose: a bot that fills it without running JS must be
-  // visible to the server, and clearing it here would hide that.
-  var honeypot = form.elements.company;
-  if (honeypot) honeypot.disabled = true;
+    // Honeypot: disable it once the page has loaded so autofill and password
+    // managers cannot populate it after JS runs. The value is still read and
+    // forwarded below on purpose: a bot that fills it without running JS must be
+    // visible to the server, and clearing it here would hide that.
+    var honeypot = form.elements.company;
+    if (honeypot) honeypot.disabled = true;
 
-  // Mirrors the server's check. The server is still the authority - this only
-  // spares a visitor a round trip that was always going to come back as a 400.
-  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    // Mirrors the server's check. The server is still the authority - this only
+    // spares a visitor a round trip that was always going to come back as a 400.
+    var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-  function setStatus(message, state) {
-    if (!status) return;
-    status.textContent = message;
-    if (state) status.setAttribute('data-state', state);
-    else status.removeAttribute('data-state');
-  }
-
-  form.addEventListener('submit', function (event) {
-    event.preventDefault();
-
-    var data = {
-      name: form.elements.name.value.trim(),
-      email: form.elements.email.value.trim(),
-      subject: form.elements.subject.value.trim(),
-      message: form.elements.message.value.trim(),
-      company: form.elements.company.value.trim()
-    };
-
-    if (!data.name || !data.email || !data.message) {
-      setStatus('Please fill in your name, email and message.', 'error');
-      return;
+    function setStatus(message, state) {
+      if (!status) return;
+      status.textContent = message;
+      if (state) status.setAttribute('data-state', state);
+      else status.removeAttribute('data-state');
     }
 
-    if (!EMAIL_RE.test(data.email)) {
-      setStatus('Please enter a valid email address.', 'error');
-      return;
-    }
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
 
-    if (submit) submit.disabled = true;
-    setStatus('Sending your message...', 'pending');
+      var data = {
+        name: form.elements.name.value.trim(),
+        email: form.elements.email.value.trim(),
+        subject: form.elements.subject.value.trim(),
+        message: form.elements.message.value.trim(),
+        company: form.elements.company.value.trim()
+      };
 
-    fetch('/api/contact', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    })
-      .then(function (response) {
-        return response.json().then(function (body) {
-          return { ok: response.ok, body: body };
+      if (!data.name || !data.email || !data.message) {
+        setStatus('Please fill in your name, email and message.', 'error');
+        return;
+      }
+
+      if (!EMAIL_RE.test(data.email)) {
+        setStatus('Please enter a valid email address.', 'error');
+        return;
+      }
+
+      if (submit) submit.disabled = true;
+      setStatus('Sending your message...', 'pending');
+
+      fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+        .then(function (response) {
+          return response.json().then(function (body) {
+            return { ok: response.ok, body: body };
+          });
+        })
+        .then(function (result) {
+          if (result.ok) {
+            form.reset();
+            setStatus('Message sent. We will reply within one business day.', 'success');
+          } else {
+            setStatus(result.body.error || 'Something went wrong. Please email us directly.', 'error');
+          }
+        })
+        .catch(function () {
+          setStatus('Could not reach the server. Please email us directly.', 'error');
+        })
+        .then(function () {
+          if (submit) submit.disabled = false;
         });
-      })
-      .then(function (result) {
-        if (result.ok) {
-          form.reset();
-          setStatus('Message sent. We will reply within one business day.', 'success');
-        } else {
-          setStatus(result.body.error || 'Something went wrong. Please email us directly.', 'error');
-        }
-      })
-      .catch(function () {
-        setStatus('Could not reach the server. Please email us directly.', 'error');
-      })
-      .then(function () {
-        if (submit) submit.disabled = false;
-      });
-  });
+    });
+  }
 
   // --- Scroll Reveal Animation ---------------------------------------------
   if ('IntersectionObserver' in window) {
@@ -203,7 +204,7 @@
       });
     }, { threshold: 0.1 });
 
-    var revealElements = document.querySelectorAll('.card, .section-head, .post, .person, .work-list > li');
+    var revealElements = document.querySelectorAll('.reveal, .card, .section-head, .post, .person, .work-list > li');
     Array.prototype.forEach.call(revealElements, function (el) {
       el.classList.add('reveal');
       observer.observe(el);
