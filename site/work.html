@@ -9,12 +9,17 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://skycreation.dev/work">
 <meta property="og:title" content="Work - Sky Creation Innovations">
+<meta property="og:image" content="https://skycreation.dev/assets/og-image.jpg">
 <meta property="og:description" content="Products built by Sky Creation Innovations: finance tools, exchange platforms, mobile apps and interactive mathematics visualisers.">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Work - Sky Creation Innovations">
 <meta name="twitter:description" content="Products built by Sky Creation Innovations: finance tools, exchange platforms, mobile apps and interactive mathematics visualisers.">
-<meta name="theme-color" content="#0b1220">
+<meta name="twitter:image" content="https://skycreation.dev/assets/og-image.jpg">
+<meta name="theme-color" content="#f8f9fa">
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body>
@@ -22,7 +27,7 @@
 
 <header class="site-header">
   <a class="brand" href="/">
-    <span class="brand-mark" aria-hidden="true"></span>
+    <img src="/assets/logo.jpg" alt="Sky Creation Innovations logo" class="brand-logo">
     <span class="brand-name">Sky Creation<em>Innovations</em></span>
   </a>
   <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
@@ -31,77 +36,93 @@
     <a href="/about">About</a>
     <a href="/math">Math</a>
     <a href="/contact">Contact</a>
-      <a class="nav-external" href="https://founder.skycreation.dev">Founder<span class="visually-hidden"> (external site)</span><span class="nav-external-mark" aria-hidden="true">&nearr;</span></a>
-    </nav>
+    <a class="nav-external" href="https://founder.skycreation.dev">Founder<span class="visually-hidden"> (external site)</span><span class="nav-external-mark" aria-hidden="true">&nearr;</span></a>
+  </nav>
 </header>
 
 <main id="main">
   <section class="hero">
     <p class="eyebrow">Work</p>
-    <h1>Things we have<br>shipped.</h1>
+    <h1>Things we have <span class="accent-word">shipped.</span></h1>
     <p class="lede">
       Finance tools, exchange platforms, mobile apps and mathematics
-      visualisers. Where a product is not public, it is described rather than
-      linked.
+      visualisers. Where a product is not public, it is described rather than linked.
     </p>
   </section>
 
   <section class="section" id="products">
     <div class="section-head">
-      <h2>Products</h2>
+      <h2>Featured <span class="accent-word">Products</span></h2>
       <p>Software built for real operational use.</p>
     </div>
 
-    <article class="card">
-      <p class="card-tag">Finance</p>
-      <h3>SCI Exchange</h3>
-      <p>
-        A Myanmar &ndash; Thailand currency exchange platform with a public
-        rate service and a web interface, built to stay responsive on modest
-        mobile connections.
-      </p>
-    </article>
-
-    <article class="card">
-      <p class="card-tag">Finance</p>
+    <article class="card card-featured reveal" data-color="blue">
+      <span class="card-badge">Finance · Software</span>
       <h3>Finance Master</h3>
-      <p>
-        Personal finance tracking: income, spending and savings in one view,
-        with the kind of local formats people actually record money in.
-      </p>
+      <p class="card-subtitle">Smart Budgeting &amp; Personal Finance Tracking.</p>
+      <p>A lightweight, browser-based solution for everyday money management. Finance Master empowers users to track daily transactions, set savings goals, and visualise spending habits through an intuitive interface.</p>
+      <div class="tech-pills">
+        <span class="pill">JavaScript</span>
+        <span class="pill">HTML / CSS</span>
+        <span class="pill">Personal Finance</span>
+      </div>
+      <a class="btn btn-primary" href="https://personalmoney.netlify.app/" rel="noopener" target="_blank">Launch Finance Master &nearr;</a>
     </article>
 
-    <article class="card">
-      <p class="card-tag">Accounting</p>
+    <article class="card card-featured reveal" data-color="sky">
+      <span class="card-badge">Accounting · Desktop</span>
       <h3>SkyAdmin Pro</h3>
-      <p>
-        An offline accounting desktop suite for administrators who need to keep
-        working when the connection drops.
-      </p>
+      <p class="card-subtitle">Accounting &amp; company administration desktop software.</p>
+      <p>A proprietary Windows desktop app for freelance accountants and company admins — client registers, document hubs, expiry tracking, visa and work-permit renewal checklists, month-end closes, and encrypted backup/restore. Built with offline-first SQLite and hardware-bound licensing.</p>
+      <div class="tech-pills">
+        <span class="pill">Python</span>
+        <span class="pill">SQLite</span>
+        <span class="pill">Cloudflare Workers</span>
+        <span class="pill">Offline-first</span>
+      </div>
     </article>
 
-    <article class="card">
-      <p class="card-tag">Operations</p>
+    <article class="card card-featured reveal" data-color="green">
+      <span class="card-badge">Business · May 2024 — Present</span>
+      <h3>SCI Exchange</h3>
+      <p class="card-subtitle">MMK &harr; THB Currency Exchange Business.</p>
+      <p>A currency exchange business serving Myanmar Kyat and Thai Baht transfers — powered by a custom platform with live rates, order creation, order tracking, and payout estimates. Founded and operated since May 2024.</p>
+      <div class="tech-pills">
+        <span class="pill">Exchange Business</span>
+        <span class="pill">MMK &harr; THB</span>
+        <span class="pill">JavaScript</span>
+        <span class="pill">Cloudflare Workers</span>
+      </div>
+      <a class="btn btn-primary" href="https://sci-exchange.waiyantunoo.workers.dev/" rel="noopener" target="_blank">Visit SCI Exchange &nearr;</a>
+    </article>
+
+    <article class="card card-featured reveal" data-color="orange">
+      <span class="card-badge">Operations · Dart / Flutter</span>
       <h3>Bakery OS</h3>
-      <p>
-        A staff operations platform for a working bakery: rosters, tasks and
-        daily handover in one place instead of a wall of paper.
-      </p>
+      <p class="card-subtitle">Operations platform for bakery staff &amp; roles.</p>
+      <p>A Flutter operations system with Supabase Auth, role-scoped UI guards, and staff workflows — built for real-world retail operations and secure access control.</p>
+      <div class="tech-pills">
+        <span class="pill">Dart</span>
+        <span class="pill">Flutter</span>
+        <span class="pill">Supabase</span>
+      </div>
     </article>
 
-    <article class="card">
-      <p class="card-tag">Mobile</p>
+    <article class="card card-featured reveal">
+      <span class="card-badge">Mobile · Android</span>
       <h3>Taungthuzay</h3>
-      <p>
-        An Android application shipped as a mobile release of a web platform,
-        focused on a small screen and a single clear job.
-      </p>
+      <p class="card-subtitle">Mobile release of a community web platform.</p>
+      <p>An Android application shipped as a mobile release of a web platform, focused on a small screen and a single clear job — keeping the experience fast on modest connections.</p>
+      <div class="tech-pills">
+        <span class="pill">Android</span>
+        <span class="pill">Mobile</span>
+      </div>
     </article>
   </section>
 
   <section class="section section-alt" id="tools">
     <div class="section-head">
-      <h2>Interactive tools</h2>
+      <h2>Interactive <span class="accent-word">tools</span></h2>
       <p>Mathematics made visible. These are covered in more detail on the maths page.</p>
     </div>
     <ul class="work-list">
@@ -109,21 +130,21 @@
         <span class="work-name">BNN Medical Simulation</span>
         <span class="work-desc">Interactive simulation of a medical imaging model</span>
         <span class="work-links">
-          <a href="https://waiyantunoo.github.io/Interactive-BNN-Medical-Diagnosis-Simulation/" rel="noopener">Open</a>
+          <a href="https://waiyantunoo.github.io/Interactive-BNN-Medical-Diagnosis-Simulation/" rel="noopener">Open &nearr;</a>
         </span>
       </li>
       <li>
         <span class="work-name">Shrinkage Visualizer</span>
         <span class="work-desc">Seeing what dimensional analysis actually means</span>
         <span class="work-links">
-          <a href="https://waiyantunoo.github.io/Shrinkage-Visualizer/" rel="noopener">Open</a>
+          <a href="https://waiyantunoo.github.io/Shrinkage-Visualizer/" rel="noopener">Open &nearr;</a>
         </span>
       </li>
       <li>
         <span class="work-name">Bohr&ndash;Mollerup Visualizer</span>
         <span class="work-desc">The conditions that make the gamma function unique</span>
         <span class="work-links">
-          <a href="https://waiyantunoo.github.io/Bohr-Mollerup-Visualizer/" rel="noopener">Open</a>
+          <a href="https://waiyantunoo.github.io/Bohr-Mollerup-Visualizer/" rel="noopener">Open &nearr;</a>
         </span>
       </li>
     </ul>
@@ -143,8 +164,18 @@
 </main>
 
 <footer class="site-footer">
-  <p>&copy; <span data-year>2026</span> Sky Creation Innovations</p>
-  <p><a href="https://www.facebook.com/skycreationinnovations/">Facebook</a></p>
+  <div class="footer-brand">
+    <img src="/assets/logo.jpg" alt="" class="brand-logo" aria-hidden="true">
+    Sky Creation Innovations
+  </div>
+  <nav class="footer-links" aria-label="Footer navigation">
+    <a href="/work">Work</a>
+    <a href="/about">About</a>
+    <a href="/math">Math</a>
+    <a href="/contact">Contact</a>
+    <a href="https://www.facebook.com/skycreationinnovations/" rel="noopener">Facebook</a>
+  </nav>
+  <p class="footer-copy">&copy; <span data-year>2026</span> Sky Creation Innovations</p>
 </footer>
 
 <script src="/assets/posts.js"></script>

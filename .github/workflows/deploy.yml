@@ -1,0 +1,42 @@
+name: Deploy to Netlify
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'site/**'
+      - 'functions/**'
+      - 'netlify.toml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Netlify CLI
+        run: npm install -g netlify-cli
+
+      - name: Deploy Company Site to Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: 19485f7b-5cc0-426e-a8a0-4ad43a5ea66a
+        run: |
+          netlify deploy --dir=site --prod
+        
+      - name: Deploy Founder Site to Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: b851f1db-a2f0-4f67-81aa-6798f5296ab6
+        run: |
+          cd site/founder
+          netlify deploy --dir=. --prod --site b851f1db-a2f0-4f67-81aa-6798f5296ab6
