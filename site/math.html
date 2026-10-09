@@ -23,6 +23,7 @@
 <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body>
+<div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="site-header">
@@ -91,6 +92,31 @@
           <a href="https://waiyantunoo.github.io/Interactive-BNN-Medical-Diagnosis-Simulation/" rel="noopener">Open the simulation &rarr;</a>
         </p>
       </article>
+    </div>
+  </section>
+
+  <section class="section" id="interactive-demo">
+    <div class="section-head">
+      <h2>Interactive <span class="accent-word">Sandbox</span></h2>
+      <p>Adjust parameters in real-time to explore how damping and frequency govern waveform decay.</p>
+    </div>
+    <div class="math-playground reveal">
+      <canvas id="math-canvas" class="math-canvas" width="600" height="240" aria-label="Interactive damped sine wave simulation"></canvas>
+      <div class="math-controls">
+        <div class="math-control-group">
+          <label for="math-freq">Frequency (<em>f</em>):</label>
+          <input type="range" id="math-freq" class="math-slider" min="1" max="8" step="0.5" value="3">
+          <span id="math-freq-val">3.0 Hz</span>
+        </div>
+        <div class="math-control-group">
+          <label for="math-damp">Damping (<em>&lambda;</em>):</label>
+          <input type="range" id="math-damp" class="math-slider" min="0" max="0.01" step="0.001" value="0.003">
+          <span id="math-damp-val">0.003</span>
+        </div>
+      </div>
+      <div class="math-formula">
+        Model: <em>y</em>(<em>t</em>) = <em>A</em> &middot; e<sup>&minus;&lambda;<em>t</em></sup> &middot; sin(2&pi;<em>ft</em>)
+      </div>
     </div>
   </section>
 
@@ -167,6 +193,9 @@
   </nav>
   <p class="footer-copy">&copy; <span data-year>2026</span> Sky Creation Innovations</p>
 </footer>
+
+<button class="back-to-top" id="back-to-top" type="button" aria-label="Back to top" title="Back to top">&#8593;</button>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="/assets/posts.js"></script>
 <script src="/assets/main.js"></script>

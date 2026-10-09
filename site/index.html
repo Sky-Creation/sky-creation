@@ -23,6 +23,7 @@
 <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body>
+<div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="site-header">
@@ -56,19 +57,21 @@
         <a class="btn btn-ghost" href="/work">See the work</a>
       </div>
     </div>
-    <div class="hero-visual" aria-hidden="true">
-      <!-- Abstract floating illustration -->
-      <svg viewBox="0 0 360 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
-        <circle cx="180" cy="160" r="120" fill="#e7f1ff" opacity="0.6"/>
-        <rect x="100" y="90" width="70" height="70" rx="14" fill="#0d6efd" opacity="0.85"/>
-        <rect x="185" y="110" width="75" height="50" rx="14" fill="#0b5ed7" opacity="0.7"/>
-        <rect x="110" y="175" width="140" height="45" rx="14" fill="#0d6efd" opacity="0.5"/>
-        <circle cx="260" cy="95" r="28" fill="#0d6efd" opacity="0.3"/>
-        <circle cx="100" cy="235" r="18" fill="#0b5ed7" opacity="0.4"/>
-        <rect x="150" y="230" width="90" height="12" rx="6" fill="#dee2e6"/>
-        <rect x="150" y="250" width="60" height="8" rx="4" fill="#e9ecef"/>
-        <circle cx="260" cy="200" r="10" fill="#0d6efd" opacity="0.6"/>
-      </svg>
+    <div class="hero-visual">
+      <!-- Interactive Particle Network Canvas with SVG fallback -->
+      <canvas id="hero-canvas" class="hero-canvas" width="360" height="320" aria-label="Interactive network visualization">
+        <svg viewBox="0 0 360 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+          <circle cx="180" cy="160" r="120" fill="#e7f1ff" opacity="0.6"/>
+          <rect x="100" y="90" width="70" height="70" rx="14" fill="#0d6efd" opacity="0.85"/>
+          <rect x="185" y="110" width="75" height="50" rx="14" fill="#0b5ed7" opacity="0.7"/>
+          <rect x="110" y="175" width="140" height="45" rx="14" fill="#0d6efd" opacity="0.5"/>
+          <circle cx="260" cy="95" r="28" fill="#0d6efd" opacity="0.3"/>
+          <circle cx="100" cy="235" r="18" fill="#0b5ed7" opacity="0.4"/>
+          <rect x="150" y="230" width="90" height="12" rx="6" fill="#dee2e6"/>
+          <rect x="150" y="250" width="60" height="8" rx="4" fill="#e9ecef"/>
+          <circle cx="260" cy="200" r="10" fill="#0d6efd" opacity="0.6"/>
+        </svg>
+      </canvas>
     </div>
   </section>
 
@@ -176,6 +179,9 @@
   </nav>
   <p class="footer-copy">&copy; <span data-year>2026</span> Sky Creation Innovations</p>
 </footer>
+
+<button class="back-to-top" id="back-to-top" type="button" aria-label="Back to top" title="Back to top">&#8593;</button>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="/assets/main.js"></script>
 </body>
