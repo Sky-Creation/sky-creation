@@ -26,6 +26,12 @@ jobs:
       - name: Install Netlify CLI
         run: npm install -g netlify-cli
 
+      - name: Run Node Tests
+        run: node --test test/*.test.mjs
+
+      - name: Run Python Tests
+        run: python3 -m unittest discover -s infra
+
       - name: Deploy Company Site to Netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
