@@ -44,7 +44,6 @@ jobs:
 
       - name: Cross-check the Spaceship zone
         if: always()
-        continue-on-error: true
         env:
           DOMAIN: skycreation.dev
           SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}
