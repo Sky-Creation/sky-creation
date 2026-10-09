@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/styles.css?v=20261009-5">
+<link rel="stylesheet" href="/assets/styles.css?v=20261009-6">
 <style>
 /* Robust styling for SCI Exchange Converter */
 .converter-wrap {
@@ -151,30 +151,47 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  flex-wrap: nowrap;
 }
 .rate-input-inline {
-  width: 75px;
-  padding: 0.15rem 0.4rem;
-  border: 1px solid #0d6efd;
-  border-radius: 4px;
-  font-size: 0.85rem;
+  width: 95px;
+  min-width: 90px;
+  padding: 0.2rem 0.45rem;
+  border: 1.5px solid #0d6efd;
+  border-radius: 6px;
+  font-size: 0.95rem;
   font-weight: 700;
   color: #0d6efd;
+  background: #ffffff;
   text-align: center;
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+}
+.rate-input-inline::-webkit-outer-spin-button,
+.rate-input-inline::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.rate-input-inline:focus {
+  outline: none;
+  border-color: #0b5ed7;
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.18);
 }
 .btn-rate-mini {
-  background: transparent;
+  background: #ffffff;
   border: 1px solid #ced4da;
   border-radius: 4px;
-  padding: 0.15rem 0.45rem;
-  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: #6c757d;
+  color: #495057;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 .btn-rate-mini:hover {
   border-color: #0d6efd;
   color: #0d6efd;
+  background: #e7f1ff;
 }
 .converter-actions {
   display: grid;
@@ -294,7 +311,7 @@
             <span>Exchange Rate:</span>
             <div class="rate-edit-wrap">
               <span id="rate-static-label">1 THB = </span>
-              <input type="number" id="calc-rate-input" class="rate-input-inline" value="128.50" step="0.1" min="1" title="Manual Rate Input" aria-label="Manual Rate Input">
+              <input type="number" id="calc-rate-input" class="rate-input-inline" value="128.50" step="any" min="1" inputmode="decimal" title="Manual Rate Input" aria-label="Manual Rate Input">
               <span style="font-weight: 700; color: #212529;">MMK</span>
               <button type="button" id="calc-reset-rate" class="btn-rate-mini" title="Reset to official rate">Reset</button>
             </div>
@@ -324,7 +341,7 @@
           <div class="admin-panel" id="admin-panel">
             <p style="margin: 0 0 0.4rem; font-weight: 700; color: #212529;">Set Default Auto Rate:</p>
             <div class="admin-input-group">
-              <input type="number" id="admin-rate-input" class="rate-input-inline" style="width: 90px; padding: 0.3rem;" value="128.50" step="0.1">
+              <input type="number" id="admin-rate-input" class="rate-input-inline" value="128.50" step="any" min="1" inputmode="decimal" aria-label="Default Admin Rate">
               <button type="button" class="btn btn-primary" id="admin-save-rate" style="padding: 0.3rem 0.75rem; font-size: 0.78rem;">Save Default</button>
             </div>
             <p style="font-size: 0.75rem; color: #6c757d; margin: 0.4rem 0 0;">
@@ -374,6 +391,6 @@
 <button class="back-to-top" id="back-to-top" type="button" aria-label="Back to top" title="Back to top">&#8593;</button>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="/assets/main.js?v=20261009-5"></script>
+<script src="/assets/main.js?v=20261009-6"></script>
 </body>
 </html>

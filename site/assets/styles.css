@@ -1345,6 +1345,58 @@ p:last-child {
   font-weight: 700;
 }
 
+.rate-edit-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: nowrap;
+}
+
+.rate-input-inline {
+  width: 95px;
+  min-width: 90px;
+  padding: 0.2rem 0.45rem;
+  border: 1.5px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--surface);
+  text-align: center;
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+}
+
+.rate-input-inline::-webkit-outer-spin-button,
+.rate-input-inline::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.rate-input-inline:focus {
+  outline: none;
+  border-color: #0b5ed7;
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.18);
+}
+
+.btn-rate-mini {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-rate-mini:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #e7f1ff;
+}
+
 .converter-actions {
   display: grid;
   gap: 0.75rem;
