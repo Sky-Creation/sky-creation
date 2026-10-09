@@ -23,7 +23,133 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/styles.css">
+<link rel="stylesheet" href="/assets/styles.css?v=20261009-4">
+<style>
+/* Robust inline fallback to ensure instant, pristine styling regardless of caching */
+.converter-wrap {
+  max-width: 460px;
+  margin: 0 auto;
+}
+.converter-card {
+  background: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 16px;
+  padding: 1.75rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+}
+.converter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid #e9ecef;
+}
+.converter-field {
+  background: #f8f9fa;
+  border: 1.5px solid #dee2e6;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  transition: all 0.2s ease;
+}
+.converter-field:focus-within {
+  border-color: #0d6efd;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.12);
+}
+.converter-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+}
+.converter-input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.converter-input {
+  border: none !important;
+  background: transparent !important;
+  width: 100%;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #212529;
+  outline: none !important;
+  font-family: inherit;
+  padding: 0;
+  -moz-appearance: textfield;
+}
+.converter-input::-webkit-outer-spin-button,
+.converter-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.converter-tag {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0d6efd;
+  background: #e7f1ff;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  white-space: nowrap;
+  margin-left: 0.75rem;
+}
+.converter-swap-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0;
+}
+.converter-swap-btn {
+  background: #ffffff;
+  border: 1.5px solid #dee2e6;
+  color: #0d6efd;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  font-size: 1.2rem;
+  transition: all 0.2s ease;
+}
+.converter-swap-btn:hover {
+  transform: rotate(180deg);
+  border-color: #0d6efd;
+  background: #e7f1ff;
+}
+.converter-meta {
+  margin: 1.25rem 0;
+  padding: 0.85rem 1rem;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+.converter-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.4rem;
+  color: #6c757d;
+}
+.converter-meta-row:last-child {
+  margin-bottom: 0;
+}
+.converter-meta-row strong {
+  color: #212529;
+  font-weight: 700;
+}
+.converter-actions {
+  display: grid;
+  gap: 0.65rem;
+}
+</style>
 </head>
 <body>
 <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
@@ -49,7 +175,7 @@
   <section class="hero" style="text-align: center; padding-bottom: 2rem;">
     <p class="eyebrow">Interactive Tool</p>
     <h1>Currency <span class="accent-word">Converter.</span></h1>
-    <p class="lede" style="margin-inline: auto; max-width: 50ch;">
+    <p class="lede" style="margin-inline: auto; max-width: 48ch;">
       Fast, real-time conversion between Thai Baht (THB) and Myanmar Kyat (MMK).
     </p>
   </section>
@@ -157,6 +283,6 @@
 <button class="back-to-top" id="back-to-top" type="button" aria-label="Back to top" title="Back to top">&#8593;</button>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="/assets/main.js"></script>
+<script src="/assets/main.js?v=20261009-4"></script>
 </body>
 </html>
