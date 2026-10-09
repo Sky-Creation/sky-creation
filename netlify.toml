@@ -37,6 +37,11 @@
   to = "/.netlify/functions/contact"
   status = 200
 
+[[redirects]]
+  from = "/calculator"
+  to = "/exchange"
+  status = 301
+
 # Founder portfolio lives on its own subdomain; keep /founder as a bounce.
 [[redirects]]
   from = "/founder"
@@ -98,6 +103,11 @@
 
 [[headers]]
   for = "/app"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/exchange"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 

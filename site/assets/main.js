@@ -487,29 +487,62 @@
       var direction = 'THB_TO_MMK'; // 'THB_TO_MMK' or 'MMK_TO_THB'
       var defaultRate = 128.5;
       var currentRate = defaultRate;
-      var selectedMethod = 'KBZPay / PromptPay';
 
       var sendInput = document.querySelector('#calc-send-amount');
       var receiveInput = document.querySelector('#calc-receive-amount');
       var swapBtn = document.querySelector('#calc-swap-btn');
       var rateText = document.querySelector('#calc-rate-display');
-      var editRateBtn = document.querySelector('#calc-edit-rate-btn');
-      var resetRateBtn = document.querySelector('#calc-reset-rate-btn');
-      var customRateBox = document.querySelector('#calc-rate-custom');
-      var customRateInput = document.querySelector('#calc-custom-rate');
-      var saveRateBtn = document.querySelector('#calc-save-rate');
+      var rateInput = document.querySelector('#calc-rate-input');
+      var resetRateBtn = document.querySelector('#calc-reset-rate');
 
       var sendCode = document.querySelector('#calc-send-code');
       var receiveCode = document.querySelector('#calc-receive-code');
       var sendBadge = document.querySelector('#calc-send-badge');
       var receiveBadge = document.querySelector('#calc-receive-badge');
-
-      var slipSend = document.querySelector('#slip-send');
       var slipRate = document.querySelector('#slip-rate');
-      var slipMethod = document.querySelector('#slip-method');
-      var slipTotal = document.querySelector('#slip-total');
       var slipCopyBtn = document.querySelector('#slip-copy-btn');
-      var methodPills = document.querySelectorAll('.method-pill');
+      var linkShareBtn = document.querySelector('#link-share-btn');
+
+      var adminToggle = document.querySelector('#admin-toggle-btn');
+      var adminPanel = document.querySelector('#admin-panel');
+      var adminRateInput = document.querySelector('#admin-rate-input');
+      var adminSaveBtn = document.querySelector('#admin-save-rate');
+
+      // Check stored default rate
+      if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+          var stored = parseFloat(window.localStorage.getItem('SCI_DEFAULT_RATE'));
+          if (!isNaN(stored) && stored > 0) {
+            defaultRate = stored;
+            currentRate = stored;
+          }
+        } catch (e) {}
+      }
+
+      // Read URL deep-link query parameters
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        try {
+          var params = new URLSearchParams(window.location.search);
+          var pAmt = params.get('amount') || params.get('send');
+          if (pAmt && !isNaN(parseFloat(pAmt)) && sendInput) {
+            sendInput.value = pAmt;
+          }
+          var pFrom = params.get('from');
+          if (pFrom && pFrom.toUpperCase() === 'MMK') {
+            direction = 'MMK_TO_THB';
+          } else if (pFrom && pFrom.toUpperCase() === 'THB') {
+            direction = 'THB_TO_MMK';
+          }
+          var pRate = params.get('rate');
+          if (pRate && !isNaN(parseFloat(pRate))) {
+            currentRate = parseFloat(pRate);
+          }
+          var pAdmin = params.get('admin');
+          if ((pAdmin === 'true' || pAdmin === '1') && adminPanel) {
+            adminPanel.classList.add('open');
+          }
+        } catch (e) {}
+      }
 
       function formatNumber(num) {
         if (isNaN(num) || num === 0) return '0';
@@ -526,34 +559,21 @@
           if (receiveCode) receiveCode.textContent = 'MMK';
           if (sendBadge) sendBadge.textContent = 'Thai Baht';
           if (receiveBadge) receiveBadge.textContent = 'Myanmar Kyat';
-          if (rateText) rateText.textContent = '1 THB = ' + currentRate.toFixed(2) + ' MMK';
         } else {
           receiveVal = currentRate > 0 ? (sendVal / currentRate).toFixed(2) : 0;
           if (sendCode) sendCode.textContent = 'MMK';
           if (receiveCode) receiveCode.textContent = 'THB';
           if (sendBadge) sendBadge.textContent = 'Myanmar Kyat';
           if (receiveBadge) receiveBadge.textContent = 'Thai Baht';
-          if (rateText) rateText.textContent = '1 THB = ' + currentRate.toFixed(2) + ' MMK';
         }
 
+        if (rateText) rateText.textContent = '1 THB = ' + currentRate.toFixed(2) + ' MMK';
+        if (slipRate) slipRate.textContent = '1 THB = ' + currentRate.toFixed(2) + ' MMK';
+        if (rateInput && document.activeElement !== rateInput) {
+          rateInput.value = currentRate.toFixed(2);
+        }
         if (receiveInput) {
           receiveInput.value = formatNumber(receiveVal);
-        }
-
-        // Update slip breakdown
-        if (slipSend) {
-          var sendUnit = direction === 'THB_TO_MMK' ? ' THB' : ' MMK';
-          slipSend.textContent = formatNumber(sendVal) + sendUnit;
-        }
-        if (slipRate) {
-          slipRate.textContent = '1 THB = ' + currentRate.toFixed(2) + ' MMK';
-        }
-        if (slipMethod) {
-          slipMethod.textContent = selectedMethod;
-        }
-        if (slipTotal) {
-          var receiveUnit = direction === 'THB_TO_MMK' ? ' MMK' : ' THB';
-          slipTotal.textContent = formatNumber(receiveVal) + receiveUnit;
         }
       }
 
@@ -561,6 +581,28 @@
         sendInput.addEventListener('input', calculate);
       }
 
+      // Manual Rate Edit
+      if (rateInput) {
+        rateInput.addEventListener('input', function () {
+          var val = parseFloat(rateInput.value);
+          if (!isNaN(val) && val > 0) {
+            currentRate = val;
+            calculate();
+          }
+        });
+      }
+
+      // Reset Rate
+      if (resetRateBtn) {
+        resetRateBtn.addEventListener('click', function () {
+          currentRate = defaultRate;
+          if (rateInput) rateInput.value = defaultRate.toFixed(2);
+          calculate();
+          showToast('Rate reset to ' + defaultRate.toFixed(2) + ' MMK');
+        });
+      }
+
+      // Direction Swap
       if (swapBtn) {
         swapBtn.addEventListener('click', function () {
           direction = direction === 'THB_TO_MMK' ? 'MMK_TO_THB' : 'THB_TO_MMK';
@@ -571,48 +613,32 @@
         });
       }
 
-      // Method selection
-      Array.prototype.forEach.call(methodPills, function (pill) {
-        pill.addEventListener('click', function () {
-          Array.prototype.forEach.call(methodPills, function (p) {
-            if (p.classList) p.classList.remove('active');
-          });
-          if (pill.classList) pill.classList.add('active');
-          selectedMethod = pill.getAttribute('data-method') || pill.textContent;
-          calculate();
-        });
-      });
-
-      // Rate editing
-      if (editRateBtn && customRateBox) {
-        editRateBtn.addEventListener('click', function () {
-          customRateBox.classList.toggle('show');
-          if (customRateInput) customRateInput.value = currentRate;
+      // Admin Drawer
+      if (adminToggle && adminPanel) {
+        adminToggle.addEventListener('click', function () {
+          adminPanel.classList.toggle('open');
+          if (adminRateInput) adminRateInput.value = defaultRate.toFixed(2);
         });
       }
 
-      if (saveRateBtn && customRateInput) {
-        saveRateBtn.addEventListener('click', function () {
-          var val = parseFloat(customRateInput.value);
+      // Admin Save Default Rate
+      if (adminSaveBtn && adminRateInput) {
+        adminSaveBtn.addEventListener('click', function () {
+          var val = parseFloat(adminRateInput.value);
           if (!isNaN(val) && val > 0) {
+            defaultRate = val;
             currentRate = val;
-            if (customRateBox) customRateBox.classList.remove('show');
+            if (rateInput) rateInput.value = val.toFixed(2);
+            if (typeof window !== 'undefined' && window.localStorage) {
+              try { window.localStorage.setItem('SCI_DEFAULT_RATE', val); } catch (e) {}
+            }
             calculate();
-            showToast('Rate updated to 1 THB = ' + val.toFixed(2) + ' MMK');
+            showToast('Default rate updated to ' + val.toFixed(2) + ' MMK');
           }
         });
       }
 
-      if (resetRateBtn) {
-        resetRateBtn.addEventListener('click', function () {
-          currentRate = defaultRate;
-          if (customRateBox) customRateBox.classList.remove('show');
-          calculate();
-          showToast('Rate reset to default');
-        });
-      }
-
-      // Copy Slip
+      // Copy Conversion Slip
       if (slipCopyBtn) {
         slipCopyBtn.addEventListener('click', function () {
           var sendVal = sendInput ? sendInput.value : '0';
@@ -625,11 +651,24 @@
             sendVal + ' ' + sendCurr + ' = ' + recvVal + ' ' + recvCurr,
             'Rate: 1 THB = ' + currentRate.toFixed(2) + ' MMK',
             'Channels: KBZPay, WavePay, PromptPay, KBank',
-            'https://skycreation.dev/app'
+            'Link: https://skycreation.dev/exchange'
           ].join('\n');
 
           fallbackCopy(text);
           showToast('Conversion details copied!');
+        });
+      }
+
+      // Copy Customer Direct Link
+      if (linkShareBtn) {
+        linkShareBtn.addEventListener('click', function () {
+          var sendVal = sendInput ? sendInput.value : '5000';
+          var curr = direction === 'THB_TO_MMK' ? 'THB' : 'MMK';
+          var url = 'https://skycreation.dev/exchange?amount=' + encodeURIComponent(sendVal) +
+                    '&from=' + encodeURIComponent(curr) +
+                    '&rate=' + encodeURIComponent(currentRate.toFixed(2));
+          fallbackCopy(url);
+          showToast('Direct customer link copied!');
         });
       }
 
