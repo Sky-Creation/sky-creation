@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SCI Exchange Calculator — Sky Creation Innovations</title>
-<meta name="description" content="Live MMK to THB currency transfer calculator and payout estimator by Sky Creation Innovations. Calculate exchange rates, fees and transfer amounts in real-time.">
+<title>Currency Converter — Sky Creation Innovations</title>
+<meta name="description" content="Simple and fast currency converter for Myanmar Kyat (MMK) and Thai Baht (THB) by Sky Creation Innovations.">
 <link rel="canonical" href="https://skycreation.dev/app">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://skycreation.dev/app">
-<meta property="og:title" content="SCI Exchange Calculator — Sky Creation Innovations">
+<meta property="og:title" content="Currency Converter — Sky Creation Innovations">
 <meta property="og:image" content="https://skycreation.dev/assets/og-image.jpg">
-<meta property="og:description" content="Live MMK to THB currency transfer calculator and payout estimator. Calculate exchange rates, fees and transfer amounts in real-time.">
+<meta property="og:description" content="Simple and fast currency converter for Myanmar Kyat (MMK) and Thai Baht (THB).">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="SCI Exchange Calculator — Sky Creation Innovations">
-<meta name="twitter:description" content="Live MMK to THB currency transfer calculator and payout estimator. Calculate exchange rates, fees and transfer amounts in real-time.">
+<meta name="twitter:title" content="Currency Converter — Sky Creation Innovations">
+<meta name="twitter:description" content="Simple and fast currency converter for Myanmar Kyat (MMK) and Thai Baht (THB).">
 <meta name="twitter:image" content="https://skycreation.dev/assets/og-image.jpg">
 <meta name="theme-color" content="#f8f9fa">
 <link rel="icon" href="/favicon.ico?v=3" sizes="any">
@@ -46,186 +46,93 @@
 </header>
 
 <main id="main">
-  <section class="hero">
-    <p class="eyebrow">Interactive Application</p>
-    <h1>SCI Exchange <span class="accent-word">Calculator.</span></h1>
-    <p class="lede">
-      Calculate live Myanmar Kyat (MMK) and Thai Baht (THB) transfers with transparent rates,
-      supported channels and instant payout slips.
+  <section class="hero" style="text-align: center; padding-bottom: 2rem;">
+    <p class="eyebrow">Interactive Tool</p>
+    <h1>Currency <span class="accent-word">Converter.</span></h1>
+    <p class="lede" style="margin-inline: auto; max-width: 50ch;">
+      Fast, real-time conversion between Thai Baht (THB) and Myanmar Kyat (MMK).
     </p>
   </section>
 
-  <!-- Interactive Calculator Section -->
-  <section class="section" id="exchange-app">
-    <div class="calc-layout">
-      <!-- Calculator Controls -->
-      <div class="calc-card reveal">
-        <h2 style="font-size: 1.4rem; margin-top: 0; margin-bottom: 1.25rem;">Transfer <span class="accent-word">Estimator</span></h2>
+  <!-- Clean, Centered Converter Card -->
+  <section class="section" id="exchange-app" style="padding-top: 0; padding-bottom: 4rem;">
+    <div class="converter-wrap">
+      <div class="converter-card reveal">
+        <div class="converter-header">
+          <span class="status-pill status-live" style="margin-bottom: 0;">
+            <span class="status-dot"></span> Live Rate
+          </span>
+          <span id="calc-rate-display" style="font-weight: 700; color: var(--text); font-size: 0.9rem;">1 THB = 128.50 MMK</span>
+        </div>
 
-        <!-- Send Input Group -->
-        <div class="calc-group">
-          <div class="calc-label">
+        <!-- Send Field -->
+        <div class="converter-field">
+          <div class="converter-label-row">
             <span>You Send</span>
-            <span class="calc-currency-badge" id="calc-send-badge">Thai Baht</span>
+            <span id="calc-send-badge">Thai Baht</span>
           </div>
-          <div class="calc-input-wrap">
-            <input type="number" id="calc-send-amount" class="calc-input" value="5000" min="1" step="100" aria-label="Amount to send">
-            <span class="calc-currency-code" id="calc-send-code">THB</span>
-          </div>
-        </div>
-
-        <!-- Direction Swap Button -->
-        <div class="calc-swap-row">
-          <button type="button" class="calc-swap-btn" id="calc-swap-btn" title="Swap currencies" aria-label="Swap transfer direction">&#8645;</button>
-        </div>
-
-        <!-- Receive Input Group -->
-        <div class="calc-group">
-          <div class="calc-label">
-            <span>Recipient Gets (Estimated)</span>
-            <span class="calc-currency-badge" id="calc-receive-badge">Myanmar Kyat</span>
-          </div>
-          <div class="calc-input-wrap">
-            <input type="text" id="calc-receive-amount" class="calc-input" readonly aria-label="Estimated amount recipient receives">
-            <span class="calc-currency-code" id="calc-receive-code">MMK</span>
+          <div class="converter-input-row">
+            <input type="number" id="calc-send-amount" class="converter-input" value="5000" min="1" step="100" aria-label="Amount to send">
+            <span class="converter-tag" id="calc-send-code">THB</span>
           </div>
         </div>
 
-        <!-- Exchange Rate Banner -->
-        <div class="calc-rate-banner">
-          <div>
-            <span>Benchmark Rate: </span>
-            <span class="calc-rate-text" id="calc-rate-display">1 THB = 128.50 MMK</span>
-          </div>
-          <div>
-            <button type="button" class="calc-rate-edit-btn" id="calc-edit-rate-btn">Adjust Rate</button>
-            <button type="button" class="calc-rate-edit-btn" id="calc-reset-rate-btn">Reset</button>
-          </div>
-          <div class="calc-rate-custom" id="calc-rate-custom">
-            <label for="calc-custom-rate" class="visually-hidden">Custom Rate</label>
-            <input type="number" id="calc-custom-rate" step="0.1" min="1">
-            <button type="button" class="btn btn-primary" id="calc-save-rate" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">Apply</button>
-          </div>
+        <!-- Swap Button -->
+        <div class="converter-swap-wrap">
+          <button type="button" class="converter-swap-btn" id="calc-swap-btn" title="Swap currencies" aria-label="Swap transfer direction">&#8645;</button>
         </div>
 
-        <!-- Transfer Channels -->
-        <div class="calc-group" style="margin-top: 1.5rem; margin-bottom: 0;">
-          <label class="calc-label"><span>Supported Transfer Channels</span></label>
-          <div class="method-pills">
-            <button type="button" class="method-pill active" data-method="KBZPay / PromptPay">KBZPay / PromptPay</button>
-            <button type="button" class="method-pill" data-method="WavePay">WavePay</button>
-            <button type="button" class="method-pill" data-method="KBank (Kasikorn)">KBank</button>
-            <button type="button" class="method-pill" data-method="SCB / Bangkok Bank">SCB</button>
-            <button type="button" class="method-pill" data-method="AYA Pay / CB Pay">AYA Pay</button>
+        <!-- Receive Field -->
+        <div class="converter-field">
+          <div class="converter-label-row">
+            <span>Recipient Gets</span>
+            <span id="calc-receive-badge">Myanmar Kyat</span>
+          </div>
+          <div class="converter-input-row">
+            <input type="text" id="calc-receive-amount" class="converter-input" readonly aria-label="Estimated amount recipient receives">
+            <span class="converter-tag" id="calc-receive-code">MMK</span>
           </div>
         </div>
-      </div>
 
-      <!-- Transaction Slip / Breakdown Card -->
-      <div class="slip-card reveal">
-        <div class="slip-header">
-          <h3 class="slip-title">Calculation Slip</h3>
-          <p class="slip-sub">SCI Exchange &bull; Transparent Breakdown</p>
-        </div>
-
-        <div class="slip-row">
-          <span>Transfer Amount:</span>
-          <strong id="slip-send">5,000 THB</strong>
-        </div>
-        <div class="slip-row">
-          <span>Conversion Rate:</span>
-          <strong id="slip-rate">1 THB = 128.50 MMK</strong>
-        </div>
-        <div class="slip-row">
-          <span>Service Fee:</span>
-          <strong>0.00 (Zero Fee Promotion)</strong>
-        </div>
-        <div class="slip-row">
-          <span>Selected Channel:</span>
-          <strong id="slip-method">KBZPay / PromptPay</strong>
+        <!-- Meta Details -->
+        <div class="converter-meta">
+          <div class="converter-meta-row">
+            <span>Exchange Rate:</span>
+            <strong id="slip-rate">1 THB = 128.50 MMK</strong>
+          </div>
+          <div class="converter-meta-row">
+            <span>Transfer Fee:</span>
+            <strong style="color: #198754;">0.00 (Zero Fee)</strong>
+          </div>
+          <div class="converter-meta-row">
+            <span>Channels:</span>
+            <span>KBZPay &bull; WavePay &bull; PromptPay &bull; KBank</span>
+          </div>
         </div>
 
-        <div class="slip-total">
-          <span class="slip-total-label">Net Payout:</span>
-          <span class="slip-total-val" id="slip-total">642,500 MMK</span>
-        </div>
-
-        <div class="slip-actions">
-          <button type="button" class="btn btn-primary" id="slip-copy-btn">Copy Order Slip</button>
-          <a class="btn btn-ghost" href="/contact">Book Transfer with Us &rarr;</a>
+        <!-- Actions -->
+        <div class="converter-actions">
+          <button type="button" class="btn btn-primary" id="slip-copy-btn" style="width: 100%;">Copy Conversion Details</button>
+          <a class="btn btn-ghost" href="/contact" style="text-align: center; width: 100%;">Contact to Exchange &rarr;</a>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Quick Reference Table -->
-  <section class="section section-alt" id="rates">
-    <div class="section-head">
-      <h2>Quick Conversion <span class="accent-word">Table</span></h2>
-      <p>Standard reference conversions calculated at current benchmark rate (1 THB = 128.50 MMK).</p>
-    </div>
-
-    <div class="rate-table-wrap reveal">
-      <table class="rate-table">
-        <thead>
-          <tr>
-            <th>Thai Baht (THB)</th>
-            <th>Myanmar Kyat (MMK)</th>
-            <th>Delivery Estimate</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>1,000 THB</strong></td>
-            <td>128,500 MMK</td>
-            <td>Instant &bull; Under 10 mins</td>
-          </tr>
-          <tr>
-            <td><strong>3,000 THB</strong></td>
-            <td>385,500 MMK</td>
-            <td>Instant &bull; Under 10 mins</td>
-          </tr>
-          <tr>
-            <td><strong>5,000 THB</strong></td>
-            <td>642,500 MMK</td>
-            <td>Instant &bull; Under 10 mins</td>
-          </tr>
-          <tr>
-            <td><strong>10,000 THB</strong></td>
-            <td>1,285,000 MMK</td>
-            <td>Instant &bull; Under 15 mins</td>
-          </tr>
-          <tr>
-            <td><strong>30,000 THB</strong></td>
-            <td>3,855,000 MMK</td>
-            <td>Same Day &bull; Verified</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- Security & Reliability Section -->
-  <section class="section" id="security">
-    <div class="section-head">
-      <h2>Why use <span class="accent-word">SCI Exchange</span></h2>
-      <p>Operated by Sky Creation Innovations since May 2024.</p>
-    </div>
+  <!-- Simple Trust Features -->
+  <section class="section section-alt">
     <div class="grid">
       <article class="card reveal">
-        <p class="card-tag">Speed</p>
-        <h3>Direct Payouts</h3>
-        <p>Direct bank and mobile wallet transfers across Myanmar (KBZPay, WavePay) and Thailand (PromptPay, Kasikorn Bank).</p>
+        <h3>Fast Direct Payouts</h3>
+        <p class="muted">Instant transfers via KBZPay, WavePay, PromptPay, and Kasikorn Bank accounts.</p>
       </article>
       <article class="card reveal">
-        <p class="card-tag">Transparency</p>
-        <h3>No Hidden Deductions</h3>
-        <p>The rate you calculate is the exact net amount received. We provide full receipts and transfer reference numbers.</p>
+        <h3>Transparent Rates</h3>
+        <p class="muted">No hidden transaction deductions. What you calculate is the exact amount delivered.</p>
       </article>
       <article class="card reveal">
-        <p class="card-tag">Reliability</p>
-        <h3>Verified Operation</h3>
-        <p>Backed by Sky Creation Innovations' engineering discipline and verified business credentials.</p>
+        <h3>Verified Service</h3>
+        <p class="muted">Founded and operated under Sky Creation Innovations since May 2024.</p>
       </article>
     </div>
   </section>

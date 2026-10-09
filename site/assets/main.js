@@ -621,18 +621,15 @@
           var recvCurr = direction === 'THB_TO_MMK' ? 'MMK' : 'THB';
 
           var text = [
-            '=== SCI Exchange Order Slip ===',
-            'Send: ' + sendVal + ' ' + sendCurr,
-            'Receive: ' + recvVal + ' ' + recvCurr,
+            'SCI Exchange Conversion:',
+            sendVal + ' ' + sendCurr + ' = ' + recvVal + ' ' + recvCurr,
             'Rate: 1 THB = ' + currentRate.toFixed(2) + ' MMK',
-            'Transfer Method: ' + selectedMethod,
-            'Platform: Sky Creation Innovations',
-            'Link: https://skycreation.dev/app',
-            '============================'
+            'Channels: KBZPay, WavePay, PromptPay, KBank',
+            'https://skycreation.dev/app'
           ].join('\n');
 
           fallbackCopy(text);
-          showToast('Order slip copied to clipboard!');
+          showToast('Conversion details copied!');
         });
       }
 
