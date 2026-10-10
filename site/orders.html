@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Track Your Exchange Order</title>
+<meta name="description" content="Track the status of your SCI Exchange order for Thai Baht (THB) and Myanmar Kyat (MMK) transfers, and upload transfer proof.">
+<link rel="canonical" href="https://skycreation.dev/orders">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://skycreation.dev/orders">
+<meta property="og:title" content="Track Your Exchange Order">
+<meta property="og:description" content="Track the status of your SCI Exchange order and upload transfer proof.">
+<meta name="theme-color" content="#f8f9fa">
+<link rel="icon" href="/favicon.ico?v=3" sizes="any">
+<link rel="icon" href="/assets/favicon-32.png?v=3" type="image/png" sizes="32x32">
+<link rel="icon" href="/assets/favicon.svg?v=3" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png?v=3">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/styles.css?v=20261010-1">
+</head>
+<body>
+<div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <a class="brand" href="/">
+    <img src="/assets/logo.jpg" alt="Sky Creation Innovations logo" class="brand-logo">
+    <span class="brand-name">Sky Creation <em>Innovations</em></span>
+  </a>
+  <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+  <nav class="site-nav" id="site-nav" aria-label="Main">
+    <a href="/work">Work</a>
+    <a href="/about">About</a>
+    <a href="/math">Math</a>
+    <a href="/exchange">Exchange</a>
+    <a href="/orders" aria-current="page">Track order</a>
+    <a href="/contact">Contact</a>
+    <a class="nav-external" href="https://founder.skycreation.dev">Founder<span class="visually-hidden"> (external site)</span><span class="nav-external-mark" aria-hidden="true">&nearr;</span></a>
+  </nav>
+</header>
+
+<main id="main">
+  <section class="hero" style="text-align: center; padding-bottom: 2rem;">
+    <p class="eyebrow">SCI Exchange</p>
+    <h1>Track your <span class="accent-word">order.</span></h1>
+    <p class="lede" style="margin-inline: auto; max-width: 46ch;">
+      Open your tracking link, or pick an order you created on this device, to
+      follow it from confirmation to payout.
+    </p>
+  </section>
+
+  <section class="section" id="orders-page" style="padding-top: 0; padding-bottom: 4rem;">
+    <div class="order-wrap">
+      <div class="card reveal">
+        <div class="section-head" style="text-align: left; margin-bottom: 0.75rem;">
+          <p class="eyebrow">Your orders</p>
+          <h2>Created on this device</h2>
+        </div>
+        <div id="guest-orders-list" class="guest-orders"></div>
+      </div>
+
+      <div id="order-detail" class="card reveal mt-sm"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-brand">
+    <img src="/assets/logo.jpg" alt="" class="brand-logo" aria-hidden="true">
+    Sky Creation Innovations
+  </div>
+  <nav class="footer-links" aria-label="Footer navigation">
+    <a href="/work">Work</a>
+    <a href="/about">About</a>
+    <a href="/math">Math</a>
+    <a href="/exchange">Exchange</a>
+    <a href="/orders">Track order</a>
+    <a href="/admin" rel="nofollow">Admin</a>
+    <a href="/contact">Contact</a>
+    <a href="https://www.facebook.com/skycreationinnovations/" rel="noopener">Facebook</a>
+  </nav>
+  <p class="footer-copy">&copy; <span data-year>2026</span> Sky Creation Innovations</p>
+</footer>
+
+<button class="back-to-top" id="back-to-top" type="button" aria-label="Back to top" title="Back to top">&#8593;</button>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="/assets/main.js?v=20261010-1"></script>
+<script src="/assets/exchange.js?v=20261010-1"></script>
+</body>
+</html>

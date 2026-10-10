@@ -11,7 +11,8 @@ operational one: what the traps are and what not to undo.
 
 ## 1. What this is
 
-- **Production site:** <https://skycreation.dev> — five static pages, no build step
+- **Production site:** <https://skycreation.dev> — six static pages plus one
+  Netlify Function, no build step
 - **Founder portfolio:** <https://founder.skycreation.dev> — source in
   `site/founder/`, separate Netlify site (same repo). Linked from the main menu
   as an external subdomain. Formerly hosted on GitHub Pages
@@ -19,10 +20,14 @@ operational one: what the traps are and what not to undo.
   points `founder` at Netlify.
 - **Hosting:** Netlify (free tier, manually deployed)
 - **Contact form:** Netlify Function → Brevo
+- **Exchange app:** Netlify Function → Netlify Blobs, no external mail service
 - **DNS:** Spaceship, monitored nightly by GitHub Actions
 
-Vanilla HTML/CSS/JS. No framework, no bundler, no package.json. Do not introduce
-one without asking.
+Vanilla HTML/CSS/JS. No framework, no bundler. The root `package.json` exists
+for exactly one reason: the `@netlify/blobs` dependency that the exchange
+function (and only the exchange function) imports. It is not a signal that a
+build step may be added. Do not add further dependencies or tooling without
+asking.
 
 ### Current state
 
@@ -35,21 +40,34 @@ published** — it is the emergency takedown switch, nothing more.
 
 ```
 netlify.toml              Company-site Netlify config. Lives at repo root on purpose.
-functions/                Netlify Function -> Brevo. NOT under site/, never published
-  contact.mjs
+functions/                Netlify Functions -> Brevo + exchange. NOT under site/, never published
+  contact.mjs             Contact form -> Brevo
+  exchange.mjs            SCI Exchange: public API + admin panel
+  exchange-lib/
+    store.mjs             Netlify Blobs wrapper (lazy; SKY_EXCHANGE_TEST stubs it)
+    validate.mjs          Amounts, honeypot, proof MIME/size, tokens
+    auth.mjs              scrypt verify + HMAC JWTs + refresh cookie
+package.json              Sole dep @netlify/blobs (needed by exchange.mjs only)
 test/                     Node tests. NOT under site/, never published
   main.test.mjs           Contact form, client side
   contact.test.mjs        Contact form, server side
+  exchange.test.mjs       Exchange, server side (45 tests)
+  exchange-client.test.mjs Exchange + admin, client side (VM fake DOM)
 site/                     Company site publish root
   index.html              Landing
   about.html              Studio and founder
   work.html               Project catalogue
   math.html               A Noob Mathematician
   contact.html            Contact form
+  exchange.html           SCI Exchange converter + order form
+  orders.html             Order tracking + proof upload
+  admin.html              SCI Exchange admin (noindex, not in sitemap)
   404.html                Real 404 page, and the target of the deny rules
   robots.txt, sitemap.xml
   assets/styles.css       All styling
   assets/main.js          Nav toggle, footer year, contact form
+  assets/exchange.js      Converter, order form, tracking, proof
+  assets/admin.js         Admin panel logic
   assets/posts.js         Facebook post lists (BOTH EMPTY - see §6)
   assets/favicon.svg
   founder/                Founder portfolio publish root (separate Netlify site)
@@ -74,7 +92,7 @@ actually happened: `/test/*.test.mjs` and `/functions/contact.mjs` served 200 on
 
 ```sh
 # Tests - CI runs exactly these
-node --test test/*.test.mjs             # 23 tests
+node --test test/*.test.mjs             # 68 tests (23 contact/exchange infra + 45 exchange)
 python3 -m unittest discover -s infra   # 39 tests
 
 # Deploy (manual - see §4)
@@ -175,6 +193,48 @@ be visible even though the bot is told it succeeded.
 Note: `rateLimited()` in `contact.mjs` legitimately calls `Date.now()`. That is
 the rate limiter working, not a timing gate. Do not remove it on sight.
 
+### The exchange is a same-origin function with its own invariants
+
+The SCI Exchange backend (`functions/exchange.mjs`) is the biggest thing in this
+repo. It is covered by 45 server tests plus client wiring tests in a fake DOM;
+keep it that way. Non-negotiable rules:
+
+- **`route()` must `await` every handler.** A handler that `throw`s an
+  `httpError(...)` while async leaks a rejected promise past the try/catch; the
+  tests were written with this bug live and every route failed on the first run.
+  If you see a bare `payload()` call without `await` in a dispatch, it is broken.
+- **Tests must run without `npm install`.** CI never installs `@netlify/blobs`.
+  All network paths are behind the lazy blob `Store` which `SKY_EXCHANGE_TEST`
+  replaces with `InMemoryStore` (`store.mjs`). Do not import `@netlify/blobs` at
+  module top level or call the real store anywhere the tests touch.
+- **Never show "converted"/"ordered" without a server answer.** Same rule as the
+  contact form, and the same trap: a client-side fill-time gate is worse than
+  nothing because bots see the same pages. The honeypot (`company`) is the only
+  success-without-persistence path, and its discards are logged deliberately.
+- **Order details are redacted unless the caller holds the per-order viewToken.**
+  A guest can always see that an order exists (id, status, timestamps) but the
+  amounts, email and proof only resolve with the 48-hex token. The neighbour's
+  obvious id must not leak your amounts.
+- **Data lives in Netlify Blobs** (`SCI_EXCHANGE_ORDERS`, `SCI_EXCHANGE_PROOFS`).
+  Deleting a blob store is irreversible loss of the order history. Treat it like
+  `rm -rf`.
+- **Rate limits and JWTs** mirror sci-exchange: 10 order creates / 10 admin
+  logins per IP per 10 minutes; 15-minute HMAC access token, httpOnly refresh
+  cookie rotated on use, alg:none and forged signatures rejected (an empty
+  signature must throw `TokenError`, never a `RangeError` — `timingSafeEqual`
+  throws on length mismatch; the length guard in `auth.mjs` exists for that).
+- **The admin API is same-origin too.** `/api/admin/*` is rewritten by
+  `netlify.toml` and `admin.html` uses no CORS. Do not "fix" it to require
+  `Access-Control-Allow-Origin`; a REST client (Postman, curl) does not need
+  CORS, but a same-origin password panel does not use it either. The passcode is
+  verified server-side (scrypt); `EXCHANGE_ADMIN_PASSWORD` lives in Netlify env,
+  never in client source.
+- **`event.path` vs Netlify rewrites:** the function receives a rewritten path
+  from `/api/exchange/*` and `/api/admin/*`. Routing uses `event.path` but a
+  static `__exchange_path` fallback when the path is already resolved. With
+  query strings, the token is read from `queryStringParameters`, not the path.
+  The rewrite behaviour is worth a live check after each deploy (see §8).
+
 ### Authoritative DNS servers only answer for their own zone
 
 **This was the hardest bug in the project and cost several wrong fixes.**
@@ -237,8 +297,12 @@ Custom domain `founder.skycreation.dev` is attached; Spacehip `founder` CNAME mu
 | `BREVO_API_KEY` | Brevo v3 key |
 | `CONTACT_TO` | `contact@skycreation.dev` |
 | `CONTACT_FROM` | `contact@skycreation.dev` (verified sender) |
+| `EXCHANGE_JWT_SECRET` | **required** for admin login; random high-entropy string |
+| `EXCHANGE_ADMIN_PASSWORD` | **required** for admin login; the `/admin` passcode |
+| `EXCHANGE_RATE_DEFAULT` | optional; first-day THB→MMK rate (default 128.5) |
 
-Already set on the live site.
+Brevo vars are already set on the live site. **The two exchange vars are not** —
+the admin API answers 503 "Not configured" until they exist (see §6).
 
 **`BREVO_API_KEY` is intentionally not marked secret.** The free plan rejects a
 secret in the `post_processing` scope, and restricting to `functions` needs Pro —
@@ -268,6 +332,7 @@ explicitly and verified working. Changing them breaks a working mail path.
 | `SPACESHIP_API_KEY` / `SPACESHIP_API_SECRET` | **Still not in Actions** (`gh secret list` is empty). `dns-watch.yml` already references them behind `continue-on-error: true`, so the cross-check step is skipped rather than failing. Needs the keys rotated and set as repo secrets. |
 | `Sky-Creation/zz-write-probe` | **Done.** Deleted; `gh repo view` no longer resolves it. |
 | Org default permission | Reverted to `read` (was temporarily `write` during diagnostics). Re-verified as `read`. |
+| Exchange on the live site | Code complete, 68 Node + 39 Python tests green locally. **Not yet deployed/live-verified** (routes, `/api/*` rewrites, order lifecycle, proof upload, admin login). The exchange env vars (`EXCHANGE_JWT_SECRET`, `EXCHANGE_ADMIN_PASSWORD`) are NOT set on Netlify yet — the admin API answers 503 until they are. Needs the user to supply them. |
 
 **Unverified claim:** Brevo returns `{"ok":true}` and accepts mail, but Netlify's
 log API is not available with the current token, so honeypot discards have never
@@ -281,8 +346,9 @@ been confirmed to appear in logs. Worth checking in the Netlify dashboard.
 - Plain ES5-ish JavaScript, no build step, no dependencies
 - Commit messages explain **why**, not what. Several here document a bug that
   would otherwise be reintroduced. Keep that up.
-- Tests are expected for anything touching the contact form or DNS parsers.
-  Both were wrong for a long time precisely because nothing ran.
+- Tests are expected for anything touching the contact form, the exchange or
+  the DNS parsers. All three were wrong for a long time precisely because
+  nothing ran.
 - CSS lives in `site/assets/styles.css`. Inline `style` attributes were removed
   deliberately; use the existing classes or add a rule.
 
@@ -290,7 +356,8 @@ been confirmed to appear in logs. Worth checking in the Netlify dashboard.
 
 ## 8. Verified state at handoff
 
-- 23 Node tests, 39 Python tests passing; CI green on `main`
+- 68 Node tests, 39 Python tests passing; CI green on `main` (exchange server +
+  client suites added; see §6 for the still-open live verification)
 - DNS watch: **12 pass, 0 warn, 0 fail** (was 0 pass / 3 fail)
 - All five pages return 200 on `https://skycreation.dev`
 - `/test/*` and `/functions/*` return **404**; `/robots.txt` and `/sitemap.xml`

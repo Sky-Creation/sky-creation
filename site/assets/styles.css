@@ -1411,5 +1411,287 @@ p:last-child {
   }
 }
 
+/* --- Exchange: order creation, tracking, admin ----------------------------- */
+
+.order-wrap {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+/* A .field can either be a <div> (contact form) or a <label class="field">. */
+.field > span {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.4rem;
+}
+
+.field select {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.85rem;
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.field select:focus {
+  border-color: var(--accent);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 580px) {
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- order timeline and status badges --- */
+
+.ex-status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border-strong);
+}
+
+.ex-status-badge[data-status="PENDING"] {
+  background: #fff3cd;
+  color: #664d03;
+  border-color: #ffecb5;
+}
+
+.ex-status-badge[data-status="APPROVED"] {
+  background: #cff4fc;
+  color: #055160;
+  border-color: #b6effb;
+}
+
+.ex-status-badge[data-status="COMPLETED"] {
+  background: #d1e7dd;
+  color: #0f5132;
+  border-color: #badbcc;
+}
+
+.ex-status-badge[data-status="REJECTED"] {
+  background: #f8d7da;
+  color: #842029;
+  border-color: #f5c2c7;
+}
+
+.ex-timeline {
+  margin-top: 1rem;
+}
+
+.ex-timeline-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  position: relative;
+  padding-bottom: 1.1rem;
+}
+
+.ex-timeline-step:last-child {
+  padding-bottom: 0;
+}
+
+.ex-timeline-dot {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  border: 2px solid var(--surface);
+  margin-top: 0.3rem;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.ex-timeline-done .ex-timeline-dot {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 1px var(--accent-2);
+}
+
+.ex-timeline-step::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 15px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-strong);
+}
+
+.ex-timeline-step:last-child::before {
+  display: none;
+}
+
+.status-inline {
+  color: #842029;
+  font-weight: 600;
+}
+
+/* --- order detail panel --- */
+
+.ex-details {
+  margin: 1rem 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.4rem 1rem;
+  font-size: 0.92rem;
+}
+
+.ex-details dt {
+  color: var(--muted);
+}
+
+.ex-details dd {
+  margin: 0;
+}
+
+.ex-proof {
+  margin-top: 1.25rem;
+}
+
+.ex-proof-img {
+  max-width: 100%;
+  max-height: 420px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  margin-top: 0.5rem;
+}
+
+/* --- guest order list on the tracking page --- */
+
+.guest-orders {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.guest-orders > * {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.guest-orders > *:last-child {
+  border-bottom: 0;
+}
+
+/* --- admin panel --- */
+
+.admin-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+
+.admin-tabs button {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0.65rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.admin-tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.85rem;
+}
+
+.admin-stat-number {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.ex-order-card {
+  margin-bottom: 0.85rem;
+}
+
+.ex-order-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.ex-order-card-line {
+  margin: 0 0 0.35rem;
+}
+
+.ex-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.admin-rate-form {
+  margin: 1rem 0;
+  max-width: 340px;
+}
+
+.admin-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  margin-bottom: 1rem;
+}
+
+.admin-history,
+.admin-audit {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.admin-history li,
+.admin-audit li {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.admin-history li:last-child,
+.admin-audit li:last-child {
+  border-bottom: 0;
+}
+
 
 

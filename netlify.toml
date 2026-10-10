@@ -37,6 +37,27 @@
   to = "/.netlify/functions/contact"
   status = 200
 
+# --- Exchange app -> Netlify Function (public + admin) -------------------
+# Both trees are handled by the one exchange function, which routes on the
+# original request path. Order matters: /api/contact is declared above it.
+
+[[redirects]]
+  from = "/api/exchange/*"
+  to = "/.netlify/functions/exchange"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/*"
+  to = "/.netlify/functions/exchange"
+  status = 200
+
+# /app used to be a byte-for-byte duplicate of /exchange; the twin pages
+# drifted whenever one was edited, so the duplicate is retired.
+[[redirects]]
+  from = "/app"
+  to = "/exchange"
+  status = 301
+
 [[redirects]]
   from = "/calculator"
   to = "/exchange"
@@ -102,12 +123,17 @@
     Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
-  for = "/app"
+  for = "/exchange"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
-  for = "/exchange"
+  for = "/orders"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/admin"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 

@@ -1,0 +1,9 @@
+{
+  "name": "sky-creation",
+  "private": true,
+  "description": "Static site + Netlify Functions for skycreation.dev.",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^8.2.0"
+  }
+}

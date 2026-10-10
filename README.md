@@ -15,21 +15,30 @@ If you are an AI agent or picking this up cold, read [AGENTS.md](AGENTS.md) firs
 
 ```
 netlify.toml                        Company-site Netlify config (repo root)
-functions/                          Netlify Function -> Brevo. NOT published
-  contact.mjs                       (lives outside site/ on purpose - see AGENTS.md)
-test/                               Node tests for the form, client and server. NOT published
-  main.test.mjs
-  contact.test.mjs
+functions/                          Netlify Functions -> Brevo + exchange. NOT published
+  contact.mjs                       Contact form -> Brevo (lives outside site/ on purpose - see AGENTS.md)
+  exchange.mjs                      SCI Exchange app: public API + admin panel
+  exchange-lib/                     store (Netlify Blobs), validation, auth
+test/                               Node tests for the form, exchange and DNS-adjacent code. NOT published
+  main.test.mjs                     Contact form, client side
+  contact.test.mjs                  Contact form, server side
+  exchange.test.mjs                 Exchange app, server side
+  exchange-client.test.mjs          Exchange + admin, client side (VM)
 site/                                Company site publish root
   index.html                        Landing
   about.html                        Studio and founder
   work.html                         Project catalogue
   math.html                         A Noob Mathematician
   contact.html                      Contact form
+  exchange.html                     SCI Exchange converter + order creation
+  orders.html                       Order tracking + proof upload
+  admin.html                        SCI Exchange admin panel (links are noindex/nofollow)
   404.html                          Real 404 page (also the target of the deny rules)
   robots.txt, sitemap.xml
   assets/styles.css                 All styling
-  assets/main.js                    Nav, footer year, contact form
+  assets/main.js                    Nav, footer year, contact form, charts
+  assets/exchange.js                Converter, order form, tracking, proof upload
+  assets/admin.js                   Admin panel logic (login, orders, rates, audit)
   assets/posts.js                   Facebook post lists
   assets/favicon.svg
   founder/                          Founder portfolio (separate Netlify site)
@@ -116,6 +125,47 @@ success for messages it never sent. A fast submission, a filled honeypot, a
 provider failure and a missing API key are each asserted, so the "sent"
 confirmation can only appear when a send was actually attempted.
 
+## SCI Exchange app
+
+The exchange (THB↔MMK cash conversion) is a same-origin Netlify Function,
+ported functionally from `D:\StudioProjects\sci-exchange`. No framework, no
+build step.
+
+Pages:
+
+- `/exchange` — converter + "start an order" form (same-origin API, so the
+  `connect-src 'self'` CSP stays intact)
+- `/orders` — guest order tracking via the id/token link and proof upload
+- `/admin` — passcode-gated admin panel (orders, rates, audit log). Not in the
+  sitemap and disallowed in `robots.txt`.
+
+Public API (see AGENTS.md for the full route list):
+
+```sh
+GET  /api/exchange/rates     # current open state + thbToMmk + mmkToThb
+POST /api/exchange/calculate # convert an amount
+POST /api/exchange/orders    # start an order  -> id + view token
+GET  /api/exchange/orders    # guest list (redacted unless you hold the token)
+GET  /api/exchange/orders/{id}?token=...  # detail
+POST /api/exchange/orders/{id}/proof      # upload payment proof (JPEG/PNG/WebP)
+```
+
+Data lives in Netlify Blobs (`SCI_EXCHANGE_ORDERS` / `SCI_EXCHANGE_PROOFS`).
+Deleting a blob store deletes the order history — treat "delete store" with the
+same care as `rm -rf`.
+
+Authorization model (matches sci-exchange): order *details* are only served to
+someone holding the per-order 48-hex `viewToken`; the admin panel uses a scrypt
+passcode at login and a 15-minute HMAC access token afterwards. The honeypot
+`company` field is the only success-without-send path, exactly like the
+contact form. **Never show "sent" (or "converted") without a server answer** —
+re-adding a client-side fill-time gate is both useless and honestly worse than
+nothing, because bots see the same pages.
+
+The `@netlify/blobs` dependency is the only item in the root `package.json`.
+Netlify installs it automatically for the function; CI runs the tests with the
+lazy `Store` stubbed, so no `npm install` is needed there.
+
 ## Deploy
 
 Deploys are manual CLI calls (see **Deploying from the CLI** above). The GitHub
@@ -140,6 +190,9 @@ deploy does need:
    | `BREVO_API_KEY` | Brevo v3 API key |
    | `CONTACT_TO` | `contact@skycreation.dev` |
    | `CONTACT_FROM` | a sender address already verified in Brevo (optional) |
+   | `EXCHANGE_JWT_SECRET` | random high-entropy string; signs admin access tokens |
+   | `EXCHANGE_ADMIN_PASSWORD` | passcode for `/admin` (hashed at rest) |
+   | `EXCHANGE_RATE_DEFAULT` | optional; default THB→MMK rate (defaults to 128.5) |
 
    `CONTACT_FROM` should be a verified Brevo sender. If it is omitted, the
    function uses `CONTACT_TO`, so make sure whichever address is used has been

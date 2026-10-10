@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SCI Exchange — Currency Converter</title>
-<meta name="description" content="Fast, real-time currency converter for Myanmar Kyat (MMK) and Thai Baht (THB) by Sky Creation Innovations.">
+<title>SCI Exchange — Currency Converter and Orders</title>
+<meta name="description" content="Live currency converter for Myanmar Kyat (MMK) and Thai Baht (THB), with secure order creation and tracking by Sky Creation Innovations.">
 <link rel="canonical" href="https://skycreation.dev/exchange">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://skycreation.dev/exchange">
-<meta property="og:title" content="SCI Exchange — Currency Converter">
+<meta property="og:title" content="SCI Exchange — Currency Converter and Orders">
 <meta property="og:image" content="https://skycreation.dev/assets/og-image.jpg">
-<meta property="og:description" content="Fast, real-time currency converter for Myanmar Kyat (MMK) and Thai Baht (THB).">
+<meta property="og:description" content="Live currency converter for MMK and THB, with secure order creation and tracking.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="SCI Exchange — Currency Converter">
-<meta name="twitter:description" content="Fast, real-time currency converter for Myanmar Kyat (MMK) and Thai Baht (THB).">
+<meta name="twitter:title" content="SCI Exchange — Currency Converter and Orders">
+<meta name="twitter:description" content="Live currency converter for MMK and THB, with secure order creation and tracking.">
 <meta name="twitter:image" content="https://skycreation.dev/assets/og-image.jpg">
 <meta name="theme-color" content="#f8f9fa">
 <link rel="icon" href="/favicon.ico?v=3" sizes="any">
@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/styles.css?v=20261009-6">
+<link rel="stylesheet" href="/assets/styles.css?v=20261010-1">
 <style>
 /* Robust styling for SCI Exchange Converter */
 .converter-wrap {
@@ -197,43 +197,6 @@
   display: grid;
   gap: 0.65rem;
 }
-.admin-drawer {
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px dashed #dee2e6;
-  font-size: 0.85rem;
-}
-.admin-toggle-btn {
-  background: transparent;
-  border: none;
-  color: #6c757d;
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0;
-}
-.admin-toggle-btn:hover {
-  color: #0d6efd;
-}
-.admin-panel {
-  display: none;
-  background: #f1f3f5;
-  border-radius: 8px;
-  padding: 0.85rem 1rem;
-  margin-top: 0.65rem;
-}
-.admin-panel.open {
-  display: block;
-}
-.admin-input-group {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.4rem;
-}
 </style>
 </head>
 <body>
@@ -261,7 +224,11 @@
     <p class="eyebrow">SCI Exchange</p>
     <h1>Currency <span class="accent-word">Converter.</span></h1>
     <p class="lede" style="margin-inline: auto; max-width: 48ch;">
-      Fast, real-time conversion between Thai Baht (THB) and Myanmar Kyat (MMK).
+      Convert between Thai Baht (THB) and Myanmar Kyat (MMK), then create an
+      exchange order and track it to payout.
+    </p>
+    <p style="margin-top: 0.5rem;">
+      <a class="btn btn-ghost" href="/orders">Track your existing order</a>
     </p>
   </section>
 
@@ -270,7 +237,7 @@
     <div class="converter-wrap">
       <div class="converter-card reveal">
         <div class="converter-header">
-          <span class="status-pill status-live" style="margin-bottom: 0;">
+          <span class="status-pill status-live" id="calc-status" style="margin-bottom: 0;">
             <span class="status-dot"></span> Live Rate
           </span>
           <span id="calc-rate-display" style="font-weight: 700; color: var(--text); font-size: 0.9rem;">1 THB = 128.50 MMK</span>
@@ -320,10 +287,6 @@
             <span>Transfer Fee:</span>
             <strong style="color: #198754;">0.00 (Zero Fee)</strong>
           </div>
-          <div class="converter-meta-row">
-            <span>Channels:</span>
-            <span>KBZPay &bull; WavePay &bull; PromptPay &bull; KBank</span>
-          </div>
         </div>
 
         <!-- Actions -->
@@ -332,22 +295,106 @@
           <button type="button" class="btn btn-ghost" id="link-share-btn" style="width: 100%;">Copy Customer Direct Link &#128279;</button>
           <a class="btn btn-ghost" href="/contact" style="text-align: center; width: 100%;">Contact to Exchange &rarr;</a>
         </div>
+      </div>
+    </div>
+  </section>
 
-        <!-- Admin Controls Drawer -->
-        <div class="admin-drawer">
-          <button type="button" class="admin-toggle-btn" id="admin-toggle-btn">
-            <span>&#9881;</span> Admin Rate Controls
-          </button>
-          <div class="admin-panel" id="admin-panel">
-            <p style="margin: 0 0 0.4rem; font-weight: 700; color: #212529;">Set Default Auto Rate:</p>
-            <div class="admin-input-group">
-              <input type="number" id="admin-rate-input" class="rate-input-inline" value="128.50" step="any" min="1" inputmode="decimal" aria-label="Default Admin Rate">
-              <button type="button" class="btn btn-primary" id="admin-save-rate" style="padding: 0.3rem 0.75rem; font-size: 0.78rem;">Save Default</button>
-            </div>
-            <p style="font-size: 0.75rem; color: #6c757d; margin: 0.4rem 0 0;">
-              Saves the benchmark rate for this browser and when sharing direct links.
-            </p>
+  <!-- Order Creation -->
+  <section class="section section-alt" id="order-section">
+    <div class="order-wrap">
+      <div class="card reveal">
+        <div class="section-head" style="text-align: left; margin-bottom: 1rem;">
+          <p class="eyebrow">Begin an exchange</p>
+          <h2>Create an order</h2>
+        </div>
+        <p class="muted">
+          Amount and direction come from the converter above; you can also edit
+          them here. The order is created with the live rate and you will get a
+          private tracking link.
+        </p>
+
+        <form id="order-form" data-order-form novalidate>
+          <div class="field-row">
+            <label class="field">
+              <span>You send</span>
+              <select id="order-direction" name="direction">
+                <option value="THB_TO_MMK">Thai Baht (THB) to MMK</option>
+                <option value="MMK_TO_THB">Myanmar Kyat (MMK) to THB</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Amount</span>
+              <input type="number" name="amount" id="order-amount" min="1" step="100" inputmode="decimal" aria-label="Amount to exchange">
+              <span class="field-hint" id="order-min-hint"></span>
+            </label>
           </div>
+
+          <div class="field-row">
+            <label class="field">
+              <span>How you will pay</span>
+              <select name="method" id="order-method" aria-label="Payment method">
+                <option value="">Loading channels...</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Service level</span>
+              <select name="level" id="order-level" aria-label="Service level">
+                <option value="">Loading levels...</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label class="field">
+              <span>Your name</span>
+              <input type="text" name="senderName" maxlength="120" autocomplete="name">
+            </label>
+            <label class="field">
+              <span>Contact (phone for confirmation)</span>
+              <input type="text" name="senderContact" maxlength="200" autocomplete="tel">
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label class="field">
+              <span>MMK account name (optional)</span>
+              <input type="text" name="accountName" maxlength="120" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>MMK account number (optional)</span>
+              <input type="text" name="accountNo" maxlength="64" autocomplete="off">
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Note (optional)</span>
+            <textarea name="note" maxlength="1000" rows="3"></textarea>
+          </label>
+
+          <!-- Honeypot: hidden from humans, reachable by naive bots. -->
+          <label class="field-hp" aria-hidden="true">
+            <input type="text" name="company" tabindex="-1" autocomplete="off" aria-label="Do not fill this in">
+          </label>
+
+          <p class="form-status" aria-live="polite"></p>
+
+          <button type="submit" class="btn btn-primary">Create Exchange Order</button>
+        </form>
+
+        <div class="card" id="order-created" hidden>
+          <div class="section-head" style="text-align: left; margin-bottom: 0.75rem;">
+            <p class="eyebrow">Order received</p>
+            <h3>Your order <strong data-ref></strong></h3>
+          </div>
+          <p>
+            You send <strong data-amount></strong>. Recipient gets
+            <strong data-receive></strong> at <span data-rate></span>.
+          </p>
+          <p>
+            Keep the link below to track it. It is also saved to the
+            <a data-track href="#">order tracking page</a> on this device.
+          </p>
+          <button type="button" class="btn btn-ghost" data-copy-link>Copy tracking link</button>
         </div>
       </div>
     </div>
@@ -382,6 +429,8 @@
     <a href="/about">About</a>
     <a href="/math">Math</a>
     <a href="/exchange">Exchange</a>
+    <a href="/orders">Track order</a>
+    <a href="/admin" rel="nofollow">Admin</a>
     <a href="/contact">Contact</a>
     <a href="https://www.facebook.com/skycreationinnovations/" rel="noopener">Facebook</a>
   </nav>
@@ -391,6 +440,7 @@
 <button class="back-to-top" id="back-to-top" type="button" aria-label="Back to top" title="Back to top">&#8593;</button>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="/assets/main.js?v=20261009-6"></script>
+<script src="/assets/main.js?v=20261010-1"></script>
+<script src="/assets/exchange.js?v=20261010-1"></script>
 </body>
 </html>
