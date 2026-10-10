@@ -32,8 +32,8 @@ export async function openStores(event) {
     connectLambda(event);
   }
   return {
-    store: getStore('SCI_EXCHANGE_ORDERS'),
-    proofs: getStore('SCI_EXCHANGE_PROOFS'),
+    store: new JsonStore(getStore('SCI_EXCHANGE_ORDERS')),
+    proofs: new JsonStore(getStore('SCI_EXCHANGE_PROOFS')),
     mode: 'blobs',
   };
 }
@@ -42,7 +42,51 @@ function isDangerousKey(key) {
   return key === '__proto__' || key === 'constructor' || key === 'prototype';
 }
 
-/* In-memory stand-in, sufficient for tests: JSON values and raw binary. */
+/* Contract both stores share (this is the part that was broken in prod):
+ *
+ * - get(key) returns the stored value already parsed from JSON, and
+ *   get(key, { type: 'arrayBuffer' }) returns raw bytes.
+ * - set(key, object) stores JSON text; set(key, buffer) stores raw bytes.
+ *
+ * The raw @netlify/blobs Store returns JSON text from get() unless a reading
+ * type is passed, so the first live deploy found every order as a string,
+ * every read of order.viewToken was undefined, and the redaction never lifted.
+ * Packing that behaviour into the wrapper keeps the app code and the test
+ * store on one API. */
+export class JsonStore {
+  constructor(inner, tag) {
+    this.inner = inner;
+    this.tag = tag;
+  }
+
+  async get(key, options = {}) {
+    const value =
+      options.type === 'arrayBuffer'
+        ? await this.inner.get(key, { type: 'arrayBuffer' })
+        : await this.inner.get(key, { type: 'json' });
+    return value === null || value === undefined ? null : value;
+  }
+
+  async set(key, value, options = {}) {
+    if (isDangerousKey(key)) throw new Error(`blocked key: ${key}`);
+    if (Buffer.isBuffer(value) || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+      await this.inner.set(key, value);
+    } else {
+      await this.inner.set(key, JSON.stringify(value));
+    }
+    return options;
+  }
+
+  async delete(key) {
+    return this.inner.delete(key);
+  }
+
+  async list(options = {}) {
+    return this.inner.list(options);
+  }
+}
+
+/* In-memory stand-in with the same surface as JsonStore, sufficient for tests. */
 export class InMemoryStore {
   constructor() {
     this.data = new Map();
@@ -51,27 +95,26 @@ export class InMemoryStore {
   async get(key, options = {}) {
     const value = this.data.get(key);
     if (value === undefined) return null;
-    if (options.type === 'arrayBuffer' && value.byteLength !== undefined) {
-      return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+    if (options.type === 'arrayBuffer') {
+      const bytes = Buffer.isBuffer(value)
+        ? value
+        : Buffer.from(value === null || value === undefined ? '' : String(value));
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    }
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
     }
     return value;
   }
 
-  async getBinary(key) {
-    const value = this.data.get(key);
-    if (value === undefined || value.byteLength === undefined) return null;
-    return Buffer.from(value);
-  }
-
-  async set(key, value, opts = {}) {
+  async set(key, value, options = {}) {
     if (isDangerousKey(key)) throw new Error(`blocked key: ${key}`);
-    this.data.set(key, JSON.parse(JSON.stringify(value)));
-    return opts;
-  }
-
-  async setBinary(key, buffer) {
-    if (isDangerousKey(key)) throw new Error(`blocked key: ${key}`);
-    this.data.set(key, Buffer.from(buffer));
+    this.data.set(key, Buffer.isBuffer(value) ? value : JSON.stringify(value));
+    return options;
   }
 
   async delete(key) {
@@ -98,10 +141,10 @@ export async function writeJson(store, key, value) {
 }
 
 export async function readBinary(store, key) {
-  const buf = await store.getBinary(key);
-  return buf === null ? null : Buffer.from(buf);
+  const value = await store.get(key, { type: 'arrayBuffer' });
+  return value === null ? null : Buffer.from(value);
 }
 
 export async function writeBinary(store, key, buffer) {
-  await store.setBinary(key, buffer);
+  await store.set(key, buffer);
 }

@@ -18,6 +18,7 @@ import { dirname, join } from 'node:path';
 
 import { createServer, InMemoryStore } from '../functions/exchange.mjs';
 import { signAccessToken } from '../functions/exchange-lib/auth.mjs';
+import { JsonStore, readJson, readBinary } from '../functions/exchange-lib/store.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const m = join(here);
@@ -627,4 +628,33 @@ test('a refresh session is rotated: reuse of the old cookie fails', async () => 
     makeEvent({ method: 'POST', path: '/api/admin/refresh', body: {}, headers: { cookie: oldCookie } })
   );
   assert.equal(replay.statusCode, 401, 'replaying the old cookie is refused');
+});
+
+test('the blob wrapper parses JSON text instead of leaking it as a string', async () => {
+  // Regression: the first live deploy read every order as JSON *text*, so
+  // order.viewToken was undefined and the redaction never lifted even with the
+  // right token. JsonStore must hide the raw store's text-returning surface.
+  const raw = {
+    async get(key, { type } = {}) {
+      // Mirrors @netlify/blobs: a bare get() returns JSON *text* (the bug);
+      // only an explicit reading type parses or returns bytes.
+      if (type === 'arrayBuffer') return Buffer.from('raw-bytes');
+      if (type === 'json') return { viewToken: 'abc', amount: 5 };
+      return '{"viewToken":"abc","amount":5}';
+    },
+    async set(key) {
+      return { key };
+    },
+    async delete() {},
+    async list() {
+      return [];
+    },
+  };
+  const store = new JsonStore(raw);
+  const value = await readJson(store, 'order:x');
+  assert.equal(value.viewToken, 'abc', 'readJson returns a parsed object, not a string');
+  assert.deepEqual(value, { viewToken: 'abc', amount: 5 });
+
+  const bytes = await readBinary(store, 'proof:x');
+  assert.equal(bytes.toString('utf8'), 'raw-bytes');
 });
