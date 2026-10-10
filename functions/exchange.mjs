@@ -71,8 +71,6 @@ export { InMemoryStore } from './exchange-lib/store.mjs';
 
 const MINIMUMS = { THB: 100, MMK: 10000 };
 const DEFAULT_RATE = 128.5;
-const INDEX_CAP = 1000;
-const AUDIT_CAP = 500;
 
 const DEFAULT_CHANNELS = [
   { id: 'KBZPay', name: 'KBZPay' },
@@ -143,6 +141,8 @@ function makeViewToken() {
 function auditKey() {
   return `audit:${Date.now()}:${randomBytes(4).toString('hex')}`;
 }
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function roundCurrency(value, direction) {
   return direction === 'THB_TO_MMK'
@@ -224,10 +224,10 @@ export function createServer({ store, proofs, env = {} } = {}) {
   }
 
   async function audit(action, detail) {
+    // Append-only: the entry lives under audit:<ts>:<rand> and adminAudit
+    // lists the prefix. Never maintain a read-modify-write index here - Blobs
+    // is eventually consistent and concurrent writes would lose entries.
     await store.set(auditKey(), { action, detail, createdAt: new Date().toISOString() });
-    const index = (await readJson(store, 'audit:index')) || [];
-    index.unshift(action);
-    await store.set('audit:index', index.slice(0, AUDIT_CAP));
   }
 
   function publicOrder(order) {
@@ -273,43 +273,42 @@ export function createServer({ store, proofs, env = {} } = {}) {
     return readJson(store, `order:${id}`);
   }
 
-  async function writeOrder(order) {
-    await store.set(`order:${order.id}`, order);
-    const index = (await readJson(store, 'order:index')) || [];
-    if (!index.includes(order.id)) {
-      index.unshift(order.id);
-      await store.set('order:index', index.slice(0, INDEX_CAP));
+async function writeOrder(order) {
+  await store.set(`order:${order.id}`, order);
+}
+
+async function removeOrder(id) {
+  // Listing is prefix-based (order: keys), so a delete is just a delete - no
+  // index to keep in sync. A briefly-stale list read may still show the order
+  // until the delete propagates; that settles within the Blobs window.
+  await store.delete(`order:${id}`);
+}
+
+async function orderIds() {
+  return (await store.list({ prefix: 'order:' })).map((entry) => entry.key.slice('order:'.length));
+}
+
+async function adminOrdersPage({ status, q, page, perPage }) {
+  const wanted = Math.max(1, Math.min(50, perPage || 25));
+  const offset = Math.max(0, (page || 1) - 1) * wanted;
+
+  const matched = [];
+  for (const id of await orderIds()) {
+    const order = await readOrder(id);
+    if (!order) continue;
+    if (status && order.status !== status) continue;
+    if (q) {
+      const needle = q.toLowerCase();
+      const hay = `${order.reference} ${order.senderName || ''} ${order.method}`.toLowerCase();
+      if (!hay.includes(needle)) continue;
     }
+    matched.push(order);
   }
+  matched.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 
-  async function removeOrder(id) {
-    await store.delete(`order:${id}`);
-    const index = (await readJson(store, 'order:index')) || [];
-    await store.set('order:index', index.filter((entry) => entry !== id));
-  }
-
-  async function adminOrdersPage({ status, q, page, perPage }) {
-    const index = (await readJson(store, 'order:index')) || [];
-    const wanted = Math.max(1, Math.min(50, perPage || 25));
-    const offset = Math.max(0, (page || 1) - 1) * wanted;
-
-    const matched = [];
-    for (const id of index) {
-      if (matched.length >= offset + wanted) break;
-      const order = await readOrder(id);
-      if (!order) continue;
-      if (status && order.status !== status) continue;
-      if (q) {
-        const needle = q.toLowerCase();
-        const hay = `${order.reference} ${order.senderName || ''} ${order.method}`.toLowerCase();
-        if (!hay.includes(needle)) continue;
-      }
-      matched.push(order);
-    }
-
-    const rows = matched.slice(offset, offset + wanted).map(publicOrder);
-    return { orders: rows, total: matched.length, page: offset / wanted + 1, perPage: wanted };
-  }
+  const rows = matched.slice(offset, offset + wanted).map(publicOrder);
+  return { orders: rows, total: matched.length, page: offset / wanted + 1, perPage: wanted };
+}
 
   /* ------------------------------------------------------------ public API */
 
@@ -596,11 +595,11 @@ export function createServer({ store, proofs, env = {} } = {}) {
 
   async function adminStats(event) {
     requireAdmin(event);
-    const index = (await readJson(store, 'order:index')) || [];
+    const ids = await orderIds();
     const counts = { PENDING: 0, APPROVED: 0, COMPLETED: 0, REJECTED: 0 };
     let volume = 0;
     let pendingVolume = 0;
-    for (const id of index.slice(0, 250)) {
+    for (const id of ids) {
       const order = await readOrder(id);
       if (!order) continue;
       counts[order.status] = (counts[order.status] || 0) + 1;
@@ -610,7 +609,7 @@ export function createServer({ store, proofs, env = {} } = {}) {
       }
     }
     return ok({
-      total: index.length,
+      total: ids.length,
       counts,
       volume,
       pendingVolume,
@@ -636,37 +635,55 @@ export function createServer({ store, proofs, env = {} } = {}) {
 
   async function adminTransition(event, id, action) {
     requireAdmin(event);
-    const order = await readOrder(id);
-    if (!order) throw httpError(404, 'Order not found');
-
-    const fromStatus = order.status;
-    let toStatus = fromStatus;
-    if (action === 'approve' && fromStatus === 'PENDING') toStatus = 'APPROVED';
-    else if (action === 'complete' && fromStatus === 'APPROVED') toStatus = 'COMPLETED';
-    else if (action === 'reject' && (fromStatus === 'PENDING' || fromStatus === 'APPROVED')) toStatus = 'REJECTED';
-    else if (action === 'delete') {
+    if (action === 'delete') {
+      const existing = await readOrder(id);
+      if (!existing) throw httpError(404, 'Order not found');
       await removeOrder(id);
-      await audit('order.deleted', { id, fromStatus });
+      await audit('order.deleted', { id, fromStatus: existing.status });
       return ok({ ok: true, deleted: true });
-    } else {
-      throw httpError(400, `Cannot ${action} an order in state ${fromStatus}`);
     }
 
-    order.status = toStatus;
-    if (toStatus === 'COMPLETED') order.completedAt = new Date().toISOString();
-    order.updatedAt = new Date().toISOString();
-    await writeOrder(order);
-    await audit(`order.${action}`, { id, fromStatus, toStatus });
-    return ok(publicOrder(order));
+    // Blobs is eventually consistent, so a state just written can briefly read
+    // back as its previous value. On a state conflict, re-read once after a
+    // short delay to ride out the common sub-second window before giving up.
+    for (let attempt = 0; ; attempt++) {
+      const order = await readOrder(id);
+      if (!order) throw httpError(404, 'Order not found');
+
+      const fromStatus = order.status;
+      let toStatus = fromStatus;
+      if (action === 'approve' && fromStatus === 'PENDING') toStatus = 'APPROVED';
+      else if (action === 'complete' && fromStatus === 'APPROVED') toStatus = 'COMPLETED';
+      else if (action === 'reject' && (fromStatus === 'PENDING' || fromStatus === 'APPROVED')) toStatus = 'REJECTED';
+      else {
+        if (attempt === 0) {
+          await sleep(250);
+          continue;
+        }
+        throw httpError(400, `Cannot ${action} an order in state ${fromStatus}`);
+      }
+
+      order.status = toStatus;
+      if (toStatus === 'COMPLETED') order.completedAt = new Date().toISOString();
+      order.updatedAt = new Date().toISOString();
+      await writeOrder(order);
+      await audit(`order.${action}`, { id, fromStatus, toStatus });
+      return ok(publicOrder(order));
+    }
   }
 
   async function adminRates(event) {
     requireAdmin(event);
     if (event.httpMethod === 'GET') {
       const rate = await getRate();
-      const history = (await readJson(store, 'rate:history:index')) || [];
+      // New-key writes (rate:history:*) are readable immediately; listing the
+      // prefix avoids the read-modify-write index that dropped entries live.
+      const keys = (await store.list({ prefix: 'rate:history:' }))
+        .map((entry) => entry.key)
+        .sort()
+        .reverse();
       const items = [];
-      for (const key of history.slice(0, 20)) {
+      for (const key of keys.slice(0, 20)) {
         const entry = await readJson(store, key);
         if (entry) items.push(entry);
       }
@@ -698,11 +715,11 @@ export function createServer({ store, proofs, env = {} } = {}) {
         source: 'admin',
       };
       await store.set('rate:current', next);
-      const key = `rate:history:${Date.now()}:${randomBytes(3).toString('hex')}`;
-      await store.set(key, { ...next, actor: 'admin' });
-      const historyIndex = (await readJson(store, 'rate:history:index')) || [];
-      historyIndex.unshift(key);
-      await store.set('rate:history:index', historyIndex.slice(0, 100));
+      // Append-only history: new key, listed by prefix when read back.
+      await store.set(`rate:history:${Date.now()}:${randomBytes(3).toString('hex')}`, {
+        ...next,
+        actor: 'admin',
+      });
       await audit('rate.updated', { thbToMmk: next.thbToMmk });
       result.thbToMmk = next.thbToMmk;
       result.mmkToThb = next.mmkToThb;
@@ -722,7 +739,9 @@ export function createServer({ store, proofs, env = {} } = {}) {
     const q = event.queryStringParameters || {};
     const page = Math.max(1, parseInt(q.page || '1', 10));
     const perPage = 25;
-    // audit:index tracks recency; the full entries live under audit:<ts>:<rand>.
+    // Entries are append-only under audit:<ts>:<rand>, so the prefix listing
+    // IS the index. audit:index was retired when read-modify-write indices
+    // were dropped; the filter keeps any old rows inert if still present.
     const list = await store.list({ prefix: 'audit:' });
     const keys = list
       .map((item) => item.key)

@@ -11,13 +11,15 @@
  * it the package looks for a runtime global that v1 never defines and throws
  * "getEnvironmentContext2 is not a function" on the first store open.
  *
- * Blobs default to *eventual* consistency: new keys are readable immediately,
- * but updates and deletions can take up to 60 seconds to propagate. The admin
- * flow does read-then-write transitions (approve -> complete, rate history
- * unshift, order index edits), which under eventual consistency would 400 on
- * the stale previous state. The real store therefore opens with strong
- * consistency. The in-memory test store is always strong by construction, so
- * tests never caught either the JSON-text bug or the eventual-consistency one.
+ * Consistency: Blobs default to *eventual* consistency - new keys are readable
+ * immediately, but updates and deletions propagate within 60 seconds. Strong
+ * consistency is NOT available in the v1 environment: the SDK routes strong
+ * reads through an `uncachedEdgeURL` that connectLambda() never receives, so
+ * requesting it throws. The app therefore stays append-only wherever possible
+ * (orders and history entries are written under new keys and read by prefix
+ * listing, never via a read-modify-write index) and admin transitions re-read
+ * once before reporting a state conflict. The in-memory test store is always
+ * strong by construction, which is why tests never saw any of this.
  *
  * Tests inject an InMemoryStore with the same surface and run with
  * SKY_EXCHANGE_TEST=1, which is why the @netlify/blobs import is lazy rather
@@ -40,16 +42,10 @@ export async function openStores(event) {
     connectLambda(event);
   }
   return {
-    // Strong consistency: without it the update/delete reads around admin
-    // transitions can lag up to 60 seconds behind the writes (see header).
-    // NB the option must ride INSIDE the getStore() call object - the second
-    // positional argument is silently ignored by @netlify/blobs.
-    store: new JsonStore(
-      getStore({ name: 'SCI_EXCHANGE_ORDERS', consistency: 'strong' }),
-    ),
-    proofs: new JsonStore(
-      getStore({ name: 'SCI_EXCHANGE_PROOFS', consistency: 'strong' }),
-    ),
+    // Not strong consistency: see the header note - the v1 environment has no
+    // uncachedEdgeURL, so requesting strong reads throws at runtime.
+    store: new JsonStore(getStore('SCI_EXCHANGE_ORDERS')),
+    proofs: new JsonStore(getStore('SCI_EXCHANGE_PROOFS')),
     mode: 'blobs',
   };
 }
