@@ -813,6 +813,22 @@ export function createServer({ store, proofs, env = {} } = {}) {
 }
 
 export const handler = async (event) => {
+  if (event && event.headers && event.headers['x-debug-echo'] === '1') {
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        hasBody: typeof event.body,
+        bodyLen: typeof event.body === 'string' ? event.body.length : null,
+        bodyStart: typeof event.body === 'string' ? event.body.slice(0, 80) : null,
+        isBase64Encoded: event.isBase64Encoded,
+        rawBodyLen: typeof event.rawBody === 'string' ? event.rawBody.length : null,
+        contentType: event.headers['content-type'],
+        method: event.httpMethod,
+        path: event.path,
+      }),
+    };
+  }
   const { store, proofs } = await openStores(event);
   const server = createServer({ store, proofs });
   return server.route(event);
