@@ -11,6 +11,14 @@
  * it the package looks for a runtime global that v1 never defines and throws
  * "getEnvironmentContext2 is not a function" on the first store open.
  *
+ * Blobs default to *eventual* consistency: new keys are readable immediately,
+ * but updates and deletions can take up to 60 seconds to propagate. The admin
+ * flow does read-then-write transitions (approve -> complete, rate history
+ * unshift, order index edits), which under eventual consistency would 400 on
+ * the stale previous state. The real store therefore opens with strong
+ * consistency. The in-memory test store is always strong by construction, so
+ * tests never caught either the JSON-text bug or the eventual-consistency one.
+ *
  * Tests inject an InMemoryStore with the same surface and run with
  * SKY_EXCHANGE_TEST=1, which is why the @netlify/blobs import is lazy rather
  * than static: importing exchange.mjs in CI must not require the package.
@@ -32,8 +40,10 @@ export async function openStores(event) {
     connectLambda(event);
   }
   return {
-    store: new JsonStore(getStore('SCI_EXCHANGE_ORDERS')),
-    proofs: new JsonStore(getStore('SCI_EXCHANGE_PROOFS')),
+    // Strong consistency: without it the update/delete reads around admin
+    // transitions can lag up to 60 seconds behind the writes (see header).
+    store: new JsonStore(getStore('SCI_EXCHANGE_ORDERS', { consistency: 'strong' })),
+    proofs: new JsonStore(getStore('SCI_EXCHANGE_PROOFS', { consistency: 'strong' })),
     mode: 'blobs',
   };
 }
@@ -82,7 +92,11 @@ export class JsonStore {
   }
 
   async list(options = {}) {
-    return this.inner.list(options);
+    // The raw store returns { blobs, directories }; the app and the test store
+    // both expect the plain array. Normalise here so adminAudit's
+    // item.key mapping does not blow up on the real shape.
+    const result = await this.inner.list(options);
+    return Array.isArray(result) ? result : result.blobs || [];
   }
 }
 

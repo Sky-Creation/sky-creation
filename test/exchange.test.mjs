@@ -647,7 +647,15 @@ test('the blob wrapper parses JSON text instead of leaking it as a string', asyn
     },
     async delete() {},
     async list() {
-      return [];
+      // Mirrors @netlify/blobs: an object with a blobs array, not the plain
+      // array JsonStore promises.
+      return {
+        blobs: [
+          { key: 'audit:x', etag: '"1"' },
+          { key: 'audit:y', etag: '"2"' },
+        ],
+        directories: [],
+      };
     },
   };
   const store = new JsonStore(raw);
@@ -657,4 +665,11 @@ test('the blob wrapper parses JSON text instead of leaking it as a string', asyn
 
   const bytes = await readBinary(store, 'proof:x');
   assert.equal(bytes.toString('utf8'), 'raw-bytes');
+
+  const list = await store.list({ prefix: 'audit:' });
+  assert.deepEqual(
+    list.map((item) => item.key),
+    ['audit:x', 'audit:y'],
+    'JsonStore.list normalises the raw { blobs, directories } shape to an array',
+  );
 });
