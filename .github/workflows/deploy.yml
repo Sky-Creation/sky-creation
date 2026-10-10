@@ -15,6 +15,12 @@ jobs:
   deploy:
     runs-on: ubuntu-24.04
     steps:
+      - name: Quiet the fresh-init branch hint
+        # actions/checkout does a scratch git init on an empty dir, and git
+        # 2.4x hints that the default branch name is changing in git 3.0 on
+        # every run. A global default silences that and matches this repo.
+        run: git config --global init.defaultBranch main
+
       - name: Checkout repository
         uses: actions/checkout@v5
 
@@ -24,6 +30,11 @@ jobs:
           node-version: '22'
 
       - name: Install Netlify CLI
+        env:
+          # netlify-cli still depends on the deprecated node-domexception
+          # package; error-level logging keeps genuine failures loud while the
+          # upstream deprecation warning stops cluttering every deploy.
+          npm_config_loglevel: error
         run: npm install -g netlify-cli
 
       - name: Run Node Tests
