@@ -18,7 +18,7 @@ operational one: what the traps are and what not to undo.
   as an external subdomain. Formerly hosted on GitHub Pages
   (`waiyantunoo.github.io`); keep that Pages site only as a redirect after DNS
   points `founder` at Netlify.
-- **Hosting:** Netlify (free tier, manually deployed)
+- **Hosting:** Netlify (free tier, auto-deployed on push to main via GitHub Actions)
 - **Contact form:** Netlify Function → Brevo
 - **Exchange app:** Netlify Function → Netlify Blobs, no external mail service
 - **DNS:** Spaceship, monitored nightly by GitHub Actions
@@ -44,14 +44,14 @@ functions/                Netlify Functions -> Brevo + exchange. NOT under site/
   contact.mjs             Contact form -> Brevo
   exchange.mjs            SCI Exchange: public API + admin panel
   exchange-lib/
-    store.mjs             Netlify Blobs wrapper (lazy; SKY_EXCHANGE_TEST stubs it)
+    store.mjs             Netlify Blobs wrapper (JsonStore, lazy import; SKY_EXCHANGE_TEST stubs it)
     validate.mjs          Amounts, honeypot, proof MIME/size, tokens
     auth.mjs              scrypt verify + HMAC JWTs + refresh cookie
 package.json              Sole dep @netlify/blobs (needed by exchange.mjs only)
 test/                     Node tests. NOT under site/, never published
   main.test.mjs           Contact form, client side
   contact.test.mjs        Contact form, server side
-  exchange.test.mjs       Exchange, server side (45 tests)
+  exchange.test.mjs       Exchange, server side (46 tests)
   exchange-client.test.mjs Exchange + admin, client side (VM fake DOM)
 site/                     Company site publish root
   index.html              Landing
@@ -77,6 +77,7 @@ infra/
   test_dns_doctor.py      Parser tests (39 tests)
 .github/workflows/
   check.yml               Tests + syntax + link check on every push
+  deploy.yml              AUTO-DEPLOYS on every push to main (see §4)
   dns-watch.yml           Nightly DNS check, files an issue on failure
 ```
 
@@ -92,10 +93,11 @@ actually happened: `/test/*.test.mjs` and `/functions/contact.mjs` served 200 on
 
 ```sh
 # Tests - CI runs exactly these
-node --test test/*.test.mjs             # 68 tests (23 contact/exchange infra + 45 exchange)
+node --test test/*.test.mjs             # 69 tests (23 contact/exchange infra + 46 exchange)
 python3 -m unittest discover -s infra   # 39 tests
 
-# Deploy (manual - see §4)
+# Deploy happens automatically on every push to main (both sites; deploy.yml).
+# Manual deploy is the same commands the workflow runs (see §4, §5):
 netlify deploy --dir=site --prod
 # Founder: run from inside site/founder so THAT netlify.toml is discovered.
 # netlify-cli has no --config flag (see §4), and --site is required because
@@ -113,11 +115,24 @@ python3 infra/dns_doctor.py --json
 
 ## 4. DO NOT break these
 
-### Deploys are manual
+### Deploys are automatic on push to main
 
-**Pushing does not publish anything.** The GitHub repo is *not* linked to
-Netlify. Every deploy is an explicit CLI call. Do not tell anyone that a push
-deployed the site.
+`deploy.yml` runs on every push to `main` (paths: `site/**`, `functions/**`,
+`netlify.toml`, `deploy.yml`; also `workflow_dispatch`) and deploys **both**
+sites — company via `netlify deploy --dir=site --prod`, founder from inside
+`site/founder/`. It runs the Node and Python test suites first and fails the
+deploy if they do not pass.
+
+Netlify is *not* linked to the repo in the UI; the workflow uses
+`NETLIFY_AUTH_TOKEN` and explicit site IDs. A push that only touches files
+outside those paths triggers no deploy. That property is what keeps the founder
+repo changes from firing a company deploy: founder lives under `site/founder/`
+so it is inside `site/**`, which means ANY founder change DOES redeploy the
+company site too. Founder is a static page, so that is harmless — just know it
+happens.
+
+Manual `netlify deploy --dir=site --prod` is the same command the workflow
+runs; keep their behaviour identical.
 
 ### `--dir` overrides `[build] publish`
 
@@ -234,6 +249,25 @@ keep it that way. Non-negotiable rules:
   static `__exchange_path` fallback when the path is already resolved. With
   query strings, the token is read from `queryStringParameters`, not the path.
   The rewrite behaviour is worth a live check after each deploy (see §8).
+- **Blobs reads are text unless you ask for a type, and v1 handlers are not
+  auto-configured.** Two live bugs, both invisible to the 45 in-memory tests:
+  1. `@netlify/blobs` `get()` returns JSON **text** unless given
+     `{ type: 'json' }`, so every order was read as a string, `viewToken`
+     matched nothing and the redaction never lifted. The `JsonStore` wrapper
+     (`store.mjs`) hides that surface: both it and `InMemoryStore` share one
+     contract — `get()` parses, `set()` stringifies objects and stores raw
+     buffers. Never reach past the wrapper to the raw Store.
+  2. The handler is v1 Lambda-style (exported `handler`), where Netlify does
+     not inject the Blobs environment; first store open dies with
+     `getEnvironmentContext2 is not a function`. `openStores(event)` calls
+     `connectLambda(event)` when the event carries a `blobs` payload (v1
+     only; the guard keeps v2 working via runtime globals).
+- **`store.set(key, object)` on the real payload used to store `[object
+  Object]`** — before the `JsonStore` wrapper landed, direct real-store writes
+  of plain objects persisted garbage. The corrupted smoke-test rows were wiped
+  with `netlify blobs:list`/`blobs:delete`/`blobs:set` (the CLI is linked to
+  the company site). Treat the blob CLI as a first-class admin tool: `list`,
+  `get`, `set --input`, `delete`.
 
 ### Authoritative DNS servers only answer for their own zone
 
@@ -328,11 +362,11 @@ explicitly and verified working. Changing them breaks a working mail path.
 | Founder Netlify cutover | Done. Site `sky-creation-founder` serves `founder.skycreation.dev` (CNAME → `sky-creation-founder.netlify.app`). `waiyantunoo.github.io` redirects to the branded URL. |
 | GitHub Pages custom domain | Must stay **cleared** on `waiyantunoo.github.io`. Re-adding `founder.skycreation.dev` as a Pages custom domain hijacks every `github.io/*` path and 404s the visualiser project sites. |
 | Turn off Powered by Netlify badge | Done via API (`built_with_badge_enabled: false`) on company and founder sites. |
-| Deploy automation | Not set up. Linking the repo to Netlify, or adding a deploy hook, would make CI publish. Ask before doing it. |
+| Deploy automation | **Done.** `deploy.yml` auto-deploys both sites on every push to main (`site/**`, `functions/**`, `netlify.toml`, `deploy.yml` paths; tests run first). Manual CLI deploys still work and are the same commands. |
 | `SPACESHIP_API_KEY` / `SPACESHIP_API_SECRET` | **Still not in Actions** (`gh secret list` is empty). `dns-watch.yml` already references them behind `continue-on-error: true`, so the cross-check step is skipped rather than failing. Needs the keys rotated and set as repo secrets. |
 | `Sky-Creation/zz-write-probe` | **Done.** Deleted; `gh repo view` no longer resolves it. |
 | Org default permission | Reverted to `read` (was temporarily `write` during diagnostics). Re-verified as `read`. |
-| Exchange on the live site | Code complete, 68 Node + 39 Python tests green locally. **Not yet deployed/live-verified** (routes, `/api/*` rewrites, order lifecycle, proof upload, admin login). The exchange env vars (`EXCHANGE_JWT_SECRET`, `EXCHANGE_ADMIN_PASSWORD`) are NOT set on Netlify yet — the admin API answers 503 until they are. Needs the user to supply them. |
+| Exchange on the live site | **Deployed and live-verified** (69 Node + 39 Python tests green). Routes + rewrites, rate seed, calculate, order create, redaction, view-token lift, list resolver and proof round-trip all smoke-tested against `skycreation.dev`; `/app` 301s to `/exchange`; `/test/*` and `/functions/*` still 404. **Remaining:** `EXCHANGE_JWT_SECRET` and `EXCHANGE_ADMIN_PASSWORD` are NOT set on Netlify yet — the admin API answers 503 "Admin auth is not configured" until they are. Needs the user to supply them, then the admin surface (login, transitions, rate update, audit log) gets a live pass. The smoke-test order/proof were cleaned from the blob stores; `rate:current` + seed and audit rows remain as the app created them. |
 
 **Unverified claim:** Brevo returns `{"ok":true}` and accepts mail, but Netlify's
 log API is not available with the current token, so honeypot discards have never
@@ -356,10 +390,12 @@ been confirmed to appear in logs. Worth checking in the Netlify dashboard.
 
 ## 8. Verified state at handoff
 
-- 68 Node tests, 39 Python tests passing; CI green on `main` (exchange server +
-  client suites added; see §6 for the still-open live verification)
+- 69 Node tests, 39 Python tests passing; CI green on `main` (exchange server +
+  client suites added, including a regression pinning the blob text-vs-JSON
+  contract)
 - DNS watch: **12 pass, 0 warn, 0 fail** (was 0 pass / 3 fail)
-- All five pages return 200 on `https://skycreation.dev`
+- All five pages return 200 on `https://skycreation.dev`; `/exchange`,
+  `/orders` and `/admin` return 200; `/app` 301s to `/exchange`
 - `/test/*` and `/functions/*` return **404**; `/robots.txt` and `/sitemap.xml`
   return **200** (verified against the live domain after redeploy)
 - Contact form delivers end-to-end; honeypot, validation and the 16 KB body

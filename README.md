@@ -76,8 +76,10 @@ netlify deploy --dir=maintenance --prod
 
 ### Deploying from the CLI
 
-Deploys are manual: this repository is not linked to Netlify, so pushing does
-not publish anything.
+Deploys are automatic: a push to `main` that touches `site/**`, `functions/**`,
+`netlify.toml` or `deploy.yml` publishes both sites (GitHub Actions →
+`netlify deploy --dir=site --prod`, tests first). This section is the manual
+fallback and uses the same commands the workflow runs.
 
 `--dir` overrides `[build] publish`. Passing the repository root uploads the
 whole tree and the site 404s at `/`, because there is no `index.html` at the
@@ -163,17 +165,19 @@ re-adding a client-side fill-time gate is both useless and honestly worse than
 nothing, because bots see the same pages.
 
 The `@netlify/blobs` dependency is the only item in the root `package.json`.
-Netlify installs it automatically for the function; CI runs the tests with the
-lazy `Store` stubbed, so no `npm install` is needed there.
+`deploy.yml` runs `npm install --no-audit --no-fund` before bundling, because
+netlify-cli's esbuild bundle will not install for it. CI test runs stub the
+blob store, so no `npm install` is needed there.
 
 ## Deploy
 
-Deploys are manual CLI calls (see **Deploying from the CLI** above). The GitHub
-repository is deliberately **not** linked to Netlify, so pushing never publishes
-anything — do not follow Netlify's "Import an existing project" flow, because
-that is what links the repo and turns a push into a deploy.
+A push to `main` that touches `site/**`, `functions/**`, `netlify.toml` or
+`.github/workflows/deploy.yml` deploys both sites: GitHub Actions runs the Node
+and Python suites, then `netlify deploy --dir=site --prod` for the company site
+and the founder deploy from inside `site/founder/`. Do not link the repo
+through Netlify's "Import an existing project" flow — that would double-deploy.
 
-To publish from a fresh clone:
+To publish from a fresh clone (or to force a deploy without a push):
 
 ```sh
 netlify login   # once per machine
