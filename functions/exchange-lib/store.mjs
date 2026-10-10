@@ -42,8 +42,14 @@ export async function openStores(event) {
   return {
     // Strong consistency: without it the update/delete reads around admin
     // transitions can lag up to 60 seconds behind the writes (see header).
-    store: new JsonStore(getStore('SCI_EXCHANGE_ORDERS', { consistency: 'strong' })),
-    proofs: new JsonStore(getStore('SCI_EXCHANGE_PROOFS', { consistency: 'strong' })),
+    // NB the option must ride INSIDE the getStore() call object - the second
+    // positional argument is silently ignored by @netlify/blobs.
+    store: new JsonStore(
+      getStore({ name: 'SCI_EXCHANGE_ORDERS', consistency: 'strong' }),
+    ),
+    proofs: new JsonStore(
+      getStore({ name: 'SCI_EXCHANGE_PROOFS', consistency: 'strong' }),
+    ),
     mode: 'blobs',
   };
 }
