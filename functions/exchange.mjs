@@ -285,7 +285,10 @@ async function removeOrder(id) {
 }
 
 async function orderIds() {
-  return (await store.list({ prefix: 'order:' })).map((entry) => entry.key.slice('order:'.length));
+  return (await store.list({ prefix: 'order:' }))
+    .map((entry) => entry.key)
+    .filter((key) => key !== 'order:index') // legacy sentinel, never an order
+    .map((key) => key.slice('order:'.length));
 }
 
 async function adminOrdersPage({ status, q, page, perPage }) {
@@ -680,6 +683,7 @@ async function adminOrdersPage({ status, q, page, perPage }) {
       // prefix avoids the read-modify-write index that dropped entries live.
       const keys = (await store.list({ prefix: 'rate:history:' }))
         .map((entry) => entry.key)
+        .filter((key) => key !== 'rate:history:index') // legacy sentinel
         .sort()
         .reverse();
       const items = [];

@@ -571,6 +571,44 @@ test('rates history is recorded and surfaced', async () => {
   assert.equal(body.history[0].thbToMmk, 131.25);
 });
 
+// Regression for the live Blobs bug: a stale `order:index` or
+// `rate:history:index` key left over from the read-modify-write era is caught
+// by the `order:`/`rate:history:` prefix listings and surfaces as phantom
+// rows. The live store had both; they must read as inert sentinels, never as
+// orders or history entries.
+test('legacy index sentinel keys are ignored by prefix listings', async () => {
+  const store = new InMemoryStore();
+  const proofs = new InMemoryStore();
+  const server = createServer({ store, proofs, env: ENV });
+  const token = await adminToken(server);
+  const created = JSON.parse(
+    (await server.route(makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody() }))).body
+  );
+
+  await store.set('order:index', [created.orderId]);
+  await store.set('rate:history:index', ['rate:history:old']);
+  await store.set('rate:history:old', {
+    thbToMmk: 1,
+    updatedAt: '2020-01-01T00:00:00.000Z',
+    source: 'admin',
+    actor: 'admin',
+  });
+
+  const list = await server.route(makeEvent({ path: '/api/admin/orders', headers: asAdmin(bearer(token)) }));
+  const rows = JSON.parse(list.body).orders;
+  assert.equal(rows.length, 1, 'the order:index sentinel is not an order');
+  assert.equal(rows[0].id, created.orderId);
+
+  const stats = await server.route(makeEvent({ path: '/api/admin/stats', headers: asAdmin(bearer(token)) }));
+  const body = JSON.parse(stats.body);
+  assert.equal(body.total, 1);
+  assert.equal(body.counts.undefined, undefined, 'no phantom status bucket');
+
+  const rates = await server.route(makeEvent({ path: '/api/admin/rates', headers: asAdmin(bearer(token)) }));
+  const history = JSON.parse(rates.body).history;
+  assert.ok(history.every((entry) => typeof entry.thbToMmk === 'number'), 'history has no raw key rows');
+});
+
 test('login attempts are rate limited and logged', async () => {
   const server = newServer();
   const event = makeEvent({ method: 'POST', path: '/api/admin/login', body: { password: 'wrong' } });
