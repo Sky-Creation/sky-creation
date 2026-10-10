@@ -22,7 +22,12 @@ concurrency:
 
 jobs:
   dns-doctor:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      # Job-level env so the cross-check step can test for presence. Expands to
+      # an empty string when the secrets are not configured.
+      SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}
+      SPACESHIP_API_SECRET: ${{ secrets.SPACESHIP_API_SECRET }}
     steps:
       - uses: actions/checkout@v5
 
@@ -43,11 +48,13 @@ jobs:
           exit $status
 
       - name: Cross-check the Spaceship zone
-        if: always()
+        # Only attempt the read-only control-plane cross-check when the
+        # Spaceship credentials exist. Without them dns_doctor emits a
+        # spaceship-api WARN every nightly run for a check that cannot run.
+        # Once the secrets are added, this step enables itself automatically.
+        if: env.SPACESHIP_API_KEY != '' && env.SPACESHIP_API_SECRET != ''
         env:
           DOMAIN: skycreation.dev
-          SPACESHIP_API_KEY: ${{ secrets.SPACESHIP_API_KEY }}
-          SPACESHIP_API_SECRET: ${{ secrets.SPACESHIP_API_SECRET }}
         run: python3 infra/dns_doctor.py --domain "$DOMAIN" --no-color --control-plane
 
       - name: Summarise the report
