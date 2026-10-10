@@ -262,6 +262,18 @@ keep it that way. Non-negotiable rules:
      `getEnvironmentContext2 is not a function`. `openStores(event)` calls
      `connectLambda(event)` when the event carries a `blobs` payload (v1
      only; the guard keeps v2 working via runtime globals).
+- **Blobs is eventually consistent and v1 cannot opt out.** New keys are
+  readable immediately; updates and deletions propagate within 60 s. Strong
+  consistency is **unavailable in the v1 environment** — the SDK routes strong
+  reads through an `uncachedEdgeURL` that `connectLambda(event)` never
+  receives, so `getStore({ name, consistency: 'strong' })` throws at runtime.
+  The app adapts, it does not fight: orders and history entries are append-only
+  (written under new keys, read by prefix listing — `order:`, `rate:history:`,
+  `audit:`) and admin transitions re-read once after 250 ms before reporting a
+  state conflict. The `order:index`/`rate:history:index`/`audit:index`
+  read-modify-write sentinels were removed and are filtered as inert if ever
+  re-seen; `InMemoryStore` is strong by construction, so tests will never show
+  any of this on their own.
 - **`store.set(key, object)` on the real payload used to store `[object
   Object]`** — before the `JsonStore` wrapper landed, direct real-store writes
   of plain objects persisted garbage. The corrupted smoke-test rows were wiped
@@ -335,8 +347,10 @@ Custom domain `founder.skycreation.dev` is attached; Spacehip `founder` CNAME mu
 | `EXCHANGE_ADMIN_PASSWORD` | **required** for admin login; the `/admin` passcode |
 | `EXCHANGE_RATE_DEFAULT` | optional; first-day THB→MMK rate (default 128.5) |
 
-Brevo vars are already set on the live site. **The two exchange vars are not** —
-the admin API answers 503 "Not configured" until they exist (see §6).
+Brevo vars are already set on the live site. **The two exchange vars are too**
+(production context, Functions scope), working and live-tested; note netlify-cli
+`env:list` shows nothing for the **dev** context — that is expected, the desktop
+link is unrelated to the live deploy (see §6). `EXCHANGE_RATE_DEFAULT` remains optional/unset.
 
 **`BREVO_API_KEY` is intentionally not marked secret.** The free plan rejects a
 secret in the `post_processing` scope, and restricting to `functions` needs Pro —
@@ -366,7 +380,7 @@ explicitly and verified working. Changing them breaks a working mail path.
 | `SPACESHIP_API_KEY` / `SPACESHIP_API_SECRET` | **Still not in Actions** (`gh secret list` is empty). `dns-watch.yml` already references them behind `continue-on-error: true`, so the cross-check step is skipped rather than failing. Needs the keys rotated and set as repo secrets. |
 | `Sky-Creation/zz-write-probe` | **Done.** Deleted; `gh repo view` no longer resolves it. |
 | Org default permission | Reverted to `read` (was temporarily `write` during diagnostics). Re-verified as `read`. |
-| Exchange on the live site | **Deployed and live-verified** (69 Node + 39 Python tests green). Routes + rewrites, rate seed, calculate, order create, redaction, view-token lift, list resolver and proof round-trip all smoke-tested against `skycreation.dev`; `/app` 301s to `/exchange`; `/test/*` and `/functions/*` still 404. **Remaining:** `EXCHANGE_JWT_SECRET` and `EXCHANGE_ADMIN_PASSWORD` are NOT set on Netlify yet — the admin API answers 503 "Admin auth is not configured" until they are. Needs the user to supply them, then the admin surface (login, transitions, rate update, audit log) gets a live pass. The smoke-test order/proof were cleaned from the blob stores; `rate:current` + seed and audit rows remain as the app created them. |
+| Exchange on the live site | **Done, or as done as it gets.** All public routes live-verified (rate seed, calculate, order create, redaction, view-token lift, list resolver, proof round-trip). `EXCHANGE_JWT_SECRET` + `EXCHANGE_ADMIN_PASSWORD` are set on Netlify (production context, Functions scope; generated values, held by the user) and the admin surface is live-verified end to end: login wrong/correct, session, stats, orders list, rates GET/POST, open toggle, refresh rotation (replay → 401), logout, audit log, delete. approve→complete back-to-back works via the 250 ms re-read; legacy `order:index`/`rate:history:index`/`audit:index` keys were deleted from the store. Blob stores now hold only real data: `setting:open`, `rate:current`, `rate:history:*`, `audit:*`, self-expiring `session:*`. `EXCHANGE_RATE_DEFAULT` remains optional/unset. |
 
 **Unverified claim:** Brevo returns `{"ok":true}` and accepts mail, but Netlify's
 log API is not available with the current token, so honeypot discards have never
