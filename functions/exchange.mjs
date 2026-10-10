@@ -813,7 +813,7 @@ export function createServer({ store, proofs, env = {} } = {}) {
 }
 
 export const handler = async (event) => {
-  const { store, proofs } = await openStores();
+  const { store, proofs } = await openStores(event);
   const server = createServer({ store, proofs });
   return server.route(event);
 };
