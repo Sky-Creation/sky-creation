@@ -43,6 +43,15 @@ jobs:
       - name: Run Python Tests
         run: python3 -m unittest discover -s infra
 
+      - name: Install Function Dependencies
+        # The exchange function imports @netlify/blobs (root package.json,
+        # sole dependency). netlify-cli bundles functions with esbuild and
+        # will not install for us, so the bundle cannot resolve the import
+        # unless node_modules exists first. check.yml deliberately never
+        # installs (the tests stub the blob store); this is the deploy-only
+        # install.
+        run: npm install --no-audit --no-fund
+
       - name: Deploy Company Site to Netlify
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
