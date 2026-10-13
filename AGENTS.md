@@ -409,13 +409,13 @@ explicitly and verified working. Changing them breaks a working mail path.
 | Item | State |
 | --- | --- |
 | `site/assets/posts.js` | Now only the **static fallback** — posts are managed from `/admin` → Posts (stored in `SCI_ADMIN` as `post:company:*` / `post:math:*`) and served to every page via `GET /api/posts` (functions/admin.mjs). Both fallback arrays are still **empty**; a section hides while its list is empty, and a functioning `/api/posts` answer is authoritative over the static data (failed/unparseable responses fall back). |
-| Site-wide admin panel | **Built, not yet live.** `functions/admin.mjs` owns ALL `/api/admin/*` + the public `/api/posts`; `site/admin.html` + `assets/admin.js` are the new username-or-email login, dashboard, exchange (orders/rates), posts editor, settings, audit list and account modules; `scripts/seed-admin.mjs` writes the `user:primary` row. 99 tests green. **Blocked on: deploy + seeding `SCI_ADMIN` + live verification + this table being updated.** Still to check once live: v1 Blobs env wiring for the admin function, rewrites for `/api/posts`, and the seeded login round-trip. |
+| Site-wide admin panel | **Done, live.** `functions/admin.mjs` owns ALL `/api/admin/*` + the public `/api/posts`; `site/admin.html` + `assets/admin.js` are the username-or-email login, dashboard, exchange (orders/rates), posts editor, settings, audit list and account modules; `scripts/seed-admin.mjs` writes the `user:primary` row (seeded 2026-10-13). Live-verified on `skycreation.dev`: `/api/posts` returns `{"company":[],"math":[]}`; `/api/admin/session` 401s unauthenticated (the admin function, not the exchange one); the seeded login returns a JWT; the admin order list carries the full order (`senderName`, `isRedacted:false`) while the guest list stays redacted; delete works; CSP now allows the proof `blob:` image. v1 Blobs env wiring and the `/api/posts` rewrite both confirmed. |
 | Publish layout | **Done.** `test/` and `functions/` moved to the repo root, company redeployed, `/test/*` and `/functions/*` return 404. See §4 "Never publish anything that is not the site". |
 | Company robots/sitemap | **Done.** `site/robots.txt` and `site/sitemap.xml` live (five extensionless URLs). Add a URL to both when a page is added. |
 | Founder Netlify cutover | Done. Site `sky-creation-founder` serves `founder.skycreation.dev` (CNAME → `sky-creation-founder.netlify.app`). `waiyantunoo.github.io` redirects to the branded URL. |
 | GitHub Pages custom domain | Must stay **cleared** on `waiyantunoo.github.io`. Re-adding `founder.skycreation.dev` as a Pages custom domain hijacks every `github.io/*` path and 404s the visualiser project sites. |
 | Turn off Powered by Netlify badge | Done via API (`built_with_badge_enabled: false`) on company and founder sites. |
-| Deploy automation | **Done.** `deploy.yml` auto-deploys both sites on every push to main (`site/**`, `functions/**`, `netlify.toml`, `deploy.yml` paths; tests run first). Manual CLI deploys still work and are the same commands. |
+| Deploy automation | **Done.** `deploy.yml` auto-deploys both sites on every push to main (`site/**`, `functions/**`, `netlify.toml`, `package*.json`, `deploy.yml` paths; tests run first; `concurrency` serialises runs, `permissions: contents: read`). Manual CLI deploys still work and are the same commands. |
 | `SPACESHIP_API_KEY` / `SPACESHIP_API_SECRET` | **Still not in Actions** (`gh secret list` is empty). `dns-watch.yml` already references them behind `continue-on-error: true`, so the cross-check step is skipped rather than failing. Needs the keys rotated and set as repo secrets. |
 | `Sky-Creation/zz-write-probe` | **Done.** Deleted; `gh repo view` no longer resolves it. |
 | Org default permission | Reverted to `read` (was temporarily `write` during diagnostics). Re-verified as `read`. |
@@ -443,8 +443,12 @@ been confirmed to appear in logs. Worth checking in the Netlify dashboard.
 
 ## 8. Verified state at handoff
 
-- 99 Node tests, 39 Python tests passing (the admin split is home; posts are
+- 103 Node tests, 41 Python tests passing (the admin split is home; posts are
   now read from `/api/posts` with `assets/posts.js` as fallback)
+- Site-wide admin panel live on `skycreation.dev`: seeded login (200 + JWT),
+  `/api/posts` → `{"company":[],"math":[]}`, admin order list full (`senderName`,
+  `isRedacted:false`) while the guest list stays redacted, delete works, CSP
+  `img-src` includes `blob:` for the proof preview
 - DNS watch: **12 pass, 0 warn, 0 fail** (was 0 pass / 3 fail)
 - All five pages return 200 on `https://skycreation.dev`; `/exchange`,
   `/orders` and `/admin` return 200; `/app` 301s to `/exchange`

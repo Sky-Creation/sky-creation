@@ -9,6 +9,8 @@ build/
 .env
 .env.*
 !.env.example
+# scripts/seed-admin.mjs output: holds a scrypt hash of the admin password
+seed-admin-out.json
 
 # Logs
 *.log
