@@ -1853,9 +1853,7 @@ p:last-child {
 
 /* --- dark theme (admin and the rest of the site, opt-in by the OS) --- */
 
-@media (prefers-color-scheme: dark) {
-  /* Disabled: force light theme to match founder page */
-}
+
 
 
 
