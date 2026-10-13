@@ -40,19 +40,27 @@ published** — it is the emergency takedown switch, nothing more.
 
 ```
 netlify.toml              Company-site Netlify config. Lives at repo root on purpose.
-functions/                Netlify Functions -> Brevo + exchange. NOT under site/, never published
+functions/                Netlify Functions -> Brevo, exchange storefront, site-wide admin. NOT under site/, never published
   contact.mjs             Contact form -> Brevo
-  exchange.mjs            SCI Exchange: public API + admin panel
+  exchange.mjs            SCI Exchange STOREFRONT: public /api/exchange/* ONLY (see admin.mjs)
+  admin.mjs               Site-wide admin: ALL /api/admin/* + public /api/posts (login, dashboard, exchange orders/rates, posts, settings, audit, account)
   exchange-lib/
-    store.mjs             Netlify Blobs wrapper (JsonStore, lazy import; SKY_EXCHANGE_TEST stubs it)
-    validate.mjs          Amounts, honeypot, proof MIME/size, tokens
-    auth.mjs              scrypt verify + HMAC JWTs + refresh cookie
-package.json              Sole dep @netlify/blobs (needed by exchange.mjs only)
-test/                     Node tests. NOT under site/, never published
-  main.test.mjs           Contact form, client side
+    store.mjs             Netlify Blobs wrapper (JsonStore, lazy import; SKY_EXCHANGE_TEST stubs it). openStores() now opens store + proofs + admin (SCI_ADMIN)
+    validate.mjs          Amounts, honeypot, proof MIME/size, tokens, parsePostInput, EMAIL_RE
+    auth.mjs              scryptHash + verifyStoredHash + HMAC JWTs + refresh session cookie; sellars: signAccessToken, verifyAccessToken, createRefreshSession, rotateRefreshSession
+    orders.mjs            Shared storefront + admin core: createOrderStore({store, proofs, auditStore, env}); storefront AND admin both call it
+    http.mjs              httpError / ok / fail / parseJsonBody / bearerToken
+package.json              Sole dep @netlify/blobs (needed by store.mjs only)
+test/                     Node tests. NOT under site/, never published (103)
+  main.test.mjs           Contact form + posts rendering, client side
   contact.test.mjs        Contact form, server side
-  exchange.test.mjs       Exchange, server side (46 tests)
-  exchange-client.test.mjs Exchange + admin, client side (VM fake DOM)
+  exchange.test.mjs       Exchange storefront, server side
+  exchange-client.test.mjs Exchange storefront, client side (VM fake DOM)
+  admin.test.mjs          Admin function, server side (seeded scrypt user, login/sessions/modules/audit)
+  admin-client.test.mjs   Admin panel, client side (VM fake DOM)
+  seed.test.mjs           scripts/seed-admin.mjs
+scripts/
+  seed-admin.mjs          Hash a password and write the user:primary row for SCI_ADMIN (not published)
 site/                     Company site publish root
   index.html              Landing
   about.html              Studio and founder
@@ -61,20 +69,19 @@ site/                     Company site publish root
   contact.html            Contact form
   exchange.html           SCI Exchange converter + order form
   orders.html             Order tracking + proof upload
-  admin.html              SCI Exchange admin (noindex, not in sitemap)
+  admin.html              Site-wide admin panel (noindex, not in sitemap)
   404.html                Real 404 page, and the target of the deny rules
   robots.txt, sitemap.xml
   assets/styles.css       All styling
-  assets/main.js          Nav toggle, footer year, contact form
   assets/exchange.js      Converter, order form, tracking, proof
-  assets/admin.js         Admin panel logic
-  assets/posts.js         Facebook post lists (BOTH EMPTY - see §6)
+  assets/admin.js         Site-wide admin panel logic (login, dashboard, orders/rates, posts, settings, audit, account)
+  assets/posts.js         Facebook post lists (STATIC FALLBACK for /api/posts - see §6)
   assets/favicon.svg
   founder/                Founder portfolio publish root (separate Netlify site)
 maintenance/              Emergency fallback, NOT published
 infra/
   dns_doctor.py           Read-only DNS health check
-  test_dns_doctor.py      Parser tests (39 tests)
+  test_dns_doctor.py      Parser tests (41 tests)
 .github/workflows/
   check.yml               Tests + syntax + link check on every push
   deploy.yml              AUTO-DEPLOYS on every push to main (see §4)
@@ -93,8 +100,8 @@ actually happened: `/test/*.test.mjs` and `/functions/contact.mjs` served 200 on
 
 ```sh
 # Tests - CI runs exactly these
-node --test test/*.test.mjs             # 69 tests (23 contact/exchange infra + 46 exchange)
-python3 -m unittest discover -s infra   # 39 tests
+node --test test/*.test.mjs             # 103 tests (14 main + 14 contact + 25 exchange server + 9 exchange client + 28 admin server + 10 admin client + 3 seed)
+python3 -m unittest discover -s infra   # 41 tests
 
 # Deploy happens automatically on every push to main (both sites; deploy.yml).
 # Manual deploy is the same commands the workflow runs (see §4, §5):
@@ -109,6 +116,10 @@ cd ../..
 # DNS check locally (needs dig)
 python3 infra/dns_doctor.py
 python3 infra/dns_doctor.py --json
+
+# Seed the admin account (once per fresh SCI_ADMIN store):
+node scripts/seed-admin.mjs --password <pw>          # writes seed-admin-out.json
+netlify blobs:set SCI_ADMIN user:primary --input seed-admin-out.json
 ```
 
 ---
@@ -208,11 +219,16 @@ be visible even though the bot is told it succeeded.
 Note: `rateLimited()` in `contact.mjs` legitimately calls `Date.now()`. That is
 the rate limiter working, not a timing gate. Do not remove it on sight.
 
-### The exchange is a same-origin function with its own invariants
+### The exchange and admin split: shared core, two same-origin functions
 
-The SCI Exchange backend (`functions/exchange.mjs`) is the biggest thing in this
-repo. It is covered by 45 server tests plus client wiring tests in a fake DOM;
-keep it that way. Non-negotiable rules:
+The SCI Exchange backend is the biggest thing in this repo and is now **split**:
+`functions/exchange.mjs` serves **only** the public `/api/exchange/*`
+storefront; `functions/admin.mjs` owns **all** `/api/admin/*` plus the public
+`/api/posts`. Both call the same `createOrderStore({store, proofs, auditStore,
+env})` core in `exchange-lib/orders.mjs`; the admin function additionally reads
+`SCI_ADMIN` (user, posts, settings, audit, sessions). Cover each surface with
+server tests in a fake DOM (no `npm install`) and keep that up. Non-negotiable
+rules:
 
 - **`route()` must `await` every handler.** A handler that `throw`s an
   `httpError(...)` while async leaks a rejected promise past the try/catch; the
@@ -229,8 +245,12 @@ keep it that way. Non-negotiable rules:
 - **Order details are redacted unless the caller holds the per-order viewToken.**
   A guest can always see that an order exists (id, status, timestamps) but the
   amounts, email and proof only resolve with the 48-hex token. The neighbour's
-  obvious id must not leak your amounts.
-- **Data lives in Netlify Blobs** (`SCI_EXCHANGE_ORDERS`, `SCI_EXCHANGE_PROOFS`).
+  obvious id must not leak your amounts. The one deliberate exception: the
+  **authenticated** admin listing (`adminOrdersPage`) maps every row through
+  `fullOrder`, so the panel can show who sent the order, the destination account
+  and the note. Storefront listings stay `publicOrder`-redacted.
+- **Data lives in Netlify Blobs** (`SCI_EXCHANGE_ORDERS`, `SCI_EXCHANGE_PROOFS`,
+  plus `SCI_ADMIN` for the panel account/posts/settings/audit).
   Deleting a blob store is irreversible loss of the order history. Treat it like
   `rm -rf`.
 - **Rate limits and JWTs** mirror sci-exchange: 10 order creates / 10 admin
@@ -241,16 +261,22 @@ keep it that way. Non-negotiable rules:
 - **The admin API is same-origin too.** `/api/admin/*` is rewritten by
   `netlify.toml` and `admin.html` uses no CORS. Do not "fix" it to require
   `Access-Control-Allow-Origin`; a REST client (Postman, curl) does not need
-  CORS, but a same-origin password panel does not use it either. The passcode is
-  verified server-side (scrypt); `EXCHANGE_ADMIN_PASSWORD` lives in Netlify env,
-  never in client source.
+  CORS, but a same-origin password panel does not use it either. The password is
+  verified server-side (scrypt, against the seeded `user:primary` row);
+  `EXCHANGE_ADMIN_PASSWORD` is only an input to the seed script, never read at
+  runtime and never in client source. The `/api/posts` route is public (no
+  auth) and lives in the admin function.
+- **Worker-side login lockout:** 5 failed logins freeze the account for 15
+  minutes (403, audited as `auth.locked`); a wrong identifier and a wrong
+  password answer identically (401), and the response on the fifth failure is
+  the lockout itself.
 - **`event.path` vs Netlify rewrites:** the function receives a rewritten path
   from `/api/exchange/*` and `/api/admin/*`. Routing uses `event.path` but a
   static `__exchange_path` fallback when the path is already resolved. With
   query strings, the token is read from `queryStringParameters`, not the path.
   The rewrite behaviour is worth a live check after each deploy (see §8).
 - **Blobs reads are text unless you ask for a type, and v1 handlers are not
-  auto-configured.** Two live bugs, both invisible to the 45 in-memory tests:
+  auto-configured.** Two live bugs, both invisible to the 99 in-memory tests:
   1. `@netlify/blobs` `get()` returns JSON **text** unless given
      `{ type: 'json' }`, so every order was read as a string, `viewToken`
      matched nothing and the redaction never lifted. The `JsonStore` wrapper
@@ -307,6 +333,12 @@ Three separate faults each caused false "DKIM missing" reports:
 servers, everything else goes to a recursive resolver. If you touch
 `Dig.query()`, keep that split.
 
+`Dig._query_chain()` caches **only definitive answers**. dig exits 9 when a
+server did not reply at all, and caching that silence as an empty record list
+made every later query settle on "record missing" without ever reaching the next
+server in the chain (or the recursive fallback) — a fourth false "DKIM missing"
+path. A timeout is re-probed; an authoritative NXDOMAIN still caches.
+
 ### `dns_doctor.py` exits non-zero when it reports findings
 
 That is the normal case for a live domain. Do not wrap a `--json` call in a bare
@@ -344,8 +376,14 @@ Custom domain `founder.skycreation.dev` is attached; Spacehip `founder` CNAME mu
 | `CONTACT_TO` | `contact@skycreation.dev` |
 | `CONTACT_FROM` | `contact@skycreation.dev` (verified sender) |
 | `EXCHANGE_JWT_SECRET` | **required** for admin login; random high-entropy string |
-| `EXCHANGE_ADMIN_PASSWORD` | **required** for admin login; the `/admin` passcode |
+| `EXCHANGE_ADMIN_PASSWORD` | **no longer read at runtime.** Feed it to `scripts/seed-admin.mjs` once per fresh `SCI_ADMIN` store (the seeded row holds the scrypt hash) |
 | `EXCHANGE_RATE_DEFAULT` | optional; first-day THB→MMK rate (default 128.5) |
+
+Blob store: **`SCI_ADMIN`** holds the admin user (`user:primary`), refresh
+sessions, posts (`post:company:*`, `post:math:*`), settings (`setting:*`) and
+the unified audit log (`audit:*`). Treat it exactly like the order/proof
+stores — deleting it loses the panel account and the audit history. The seed
+command above is the recovery path.
 
 Brevo vars are already set on the live site. **The two exchange vars are too**
 (production context, Functions scope), working and live-tested; note netlify-cli
@@ -370,7 +408,8 @@ explicitly and verified working. Changing them breaks a working mail path.
 
 | Item | State |
 | --- | --- |
-| `site/assets/posts.js` | Both `company` and `math` arrays are **empty**. Sections auto-hide until populated. Needs the user's actual Facebook post text — do not invent content. |
+| `site/assets/posts.js` | Now only the **static fallback** — posts are managed from `/admin` → Posts (stored in `SCI_ADMIN` as `post:company:*` / `post:math:*`) and served to every page via `GET /api/posts` (functions/admin.mjs). Both fallback arrays are still **empty**; a section hides while its list is empty, and a functioning `/api/posts` answer is authoritative over the static data (failed/unparseable responses fall back). |
+| Site-wide admin panel | **Built, not yet live.** `functions/admin.mjs` owns ALL `/api/admin/*` + the public `/api/posts`; `site/admin.html` + `assets/admin.js` are the new username-or-email login, dashboard, exchange (orders/rates), posts editor, settings, audit list and account modules; `scripts/seed-admin.mjs` writes the `user:primary` row. 99 tests green. **Blocked on: deploy + seeding `SCI_ADMIN` + live verification + this table being updated.** Still to check once live: v1 Blobs env wiring for the admin function, rewrites for `/api/posts`, and the seeded login round-trip. |
 | Publish layout | **Done.** `test/` and `functions/` moved to the repo root, company redeployed, `/test/*` and `/functions/*` return 404. See §4 "Never publish anything that is not the site". |
 | Company robots/sitemap | **Done.** `site/robots.txt` and `site/sitemap.xml` live (five extensionless URLs). Add a URL to both when a page is added. |
 | Founder Netlify cutover | Done. Site `sky-creation-founder` serves `founder.skycreation.dev` (CNAME → `sky-creation-founder.netlify.app`). `waiyantunoo.github.io` redirects to the branded URL. |
@@ -404,9 +443,8 @@ been confirmed to appear in logs. Worth checking in the Netlify dashboard.
 
 ## 8. Verified state at handoff
 
-- 69 Node tests, 39 Python tests passing; CI green on `main` (exchange server +
-  client suites added, including a regression pinning the blob text-vs-JSON
-  contract)
+- 99 Node tests, 39 Python tests passing (the admin split is home; posts are
+  now read from `/api/posts` with `assets/posts.js` as fallback)
 - DNS watch: **12 pass, 0 warn, 0 fail** (was 0 pass / 3 fail)
 - All five pages return 200 on `https://skycreation.dev`; `/exchange`,
   `/orders` and `/admin` return 200; `/app` 301s to `/exchange`

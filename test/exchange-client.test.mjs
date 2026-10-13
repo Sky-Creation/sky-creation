@@ -1,14 +1,15 @@
-/* Behavioural tests for the exchange client scripts (assets/exchange.js and
- * assets/admin.js), following the same live-DOM style as main.test.mjs: the
- * scripts are plain IIFEs, so they are evaluated against a minimal fake DOM in
- * a VM and the listeners are captured and invoked directly.
+/* Behavioural tests for the exchange client script (assets/exchange.js),
+ * following the same live-DOM style as main.test.mjs: the script is a plain
+ * IIFE, so it is evaluated against a minimal fake DOM in a VM and the
+ * listeners are captured and invoked directly.
  *
  * The rules enforced here mirror the server tests:
  *   - an order is only shown as created after the server answers with a real
  *     order id - a success message shown before the send is a bug;
- *   - the honeypot value is forwarded for the server to filter on;
- *   - the admin token is stored only after a successful login and cleared on
- *     401, and the dashboard is only shown after login reports success.
+ *   - the honeypot value is forwarded for the server to filter on.
+ *
+ * The admin panel has its own suite (admin-client.test.mjs) and its own
+ * script; nothing here touches assets/admin.js.
  *
  * Run: node --test test/*.test.mjs
  */
@@ -21,7 +22,6 @@ import vm from 'node:vm';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const exchangeSource = readFileSync(join(here, '..', 'site', 'assets', 'exchange.js'), 'utf8');
-const adminSource = readFileSync(join(here, '..', 'site', 'assets', 'admin.js'), 'utf8');
 
 /* ------------------------------------------------------- fake DOM helpers */
 
@@ -158,6 +158,14 @@ function loadExchange({ search = '', guests = [], respondRoutes = {} } = {}) {
     '#calc-receive-code': makeEl('span'),
     '#calc-send-badge': makeEl('span'),
     '#calc-receive-badge': makeEl('span'),
+    '#calc-receive-amount': Object.assign(makeEl('input'), { value: '' }),
+    '#calc-rate-input': Object.assign(makeEl('input'), { value: '' }),
+    '#calc-rate-display': makeEl('span'),
+    '#calc-min-hint': makeEl('span'),
+    '#calc-reset-rate': Object.assign(makeEl('button'), {}),
+    '#calc-swap-btn': Object.assign(makeEl('button'), {}),
+    '#order-min-hint': makeEl('span'),
+    '#order-direction': Object.assign(makeEl('input'), { value: '' }),
     '#order-form': orderForm,
     '#order-created': createdPanel,
     '#orders-page': makeEl('section'),
@@ -208,6 +216,13 @@ function loadExchange({ search = '', guests = [], respondRoutes = {} } = {}) {
     guestList,
     orderDetail,
     storage,
+    converter: {
+      send: bySel['#calc-send-amount'],
+      receive: bySel['#calc-receive-amount'],
+      rateInput: bySel['#calc-rate-input'],
+      display: bySel['#calc-rate-display'],
+      resetButton: bySel['#calc-reset-rate'],
+    },
     SKY: context.window.SKY_EXCHANGE,
     settle,
   };
@@ -292,118 +307,83 @@ test('exchange.js shows a detail panel for a tracked order', async () => {
   assert.ok(subtreeText(orderDetail).includes('SC-1'));
 });
 
-/* ---------------------------------------------------------------- admin.js */
-
-const ADMIN_OK = (body, extra = {}) => ({ status: 200, body, ...extra });
-
-function loadAdmin({ routes = {} } = {}) {
-  const calls = { fetch: [] };
-  const loginStatus = makeEl('p');
-  const loginEl = makeEl('div');
-  loginEl.hidden = true;
-  const appEl = makeEl('div');
-  appEl.hidden = true;
-
-  const formFields = { password: Object.assign(makeEl('input'), { value: 'correct' }) };
-  const { raw: loginForm, listeners } = makeForm(formFields, loginStatus);
-
-  const panels = ['stats', 'orders', 'rates', 'audit'].reduce((acc, id) => {
-    acc[id] = makeEl('div');
-    return acc;
-  }, {});
-
-  const bySel = {
-    '#admin-login': loginEl,
-    '#admin-app': appEl,
-    '#admin-login-form': loginForm,
-    '#admin-login-status': loginStatus,
-    '#admin-panel-stats': panels.stats,
-    '#admin-panel-orders': panels.orders,
-    '#admin-panel-rates': panels.rates,
-    '#admin-panel-audit': panels.audit,
-  };
-
-  const storage = makeStorage();
-
-  const fetchImpl = (url, opts) => {
-    calls.fetch.push({
-      url,
-      method: (opts && opts.method) || 'GET',
-      body: opts && opts.body ? JSON.parse(opts.body) : {},
-      auth: (opts && opts.headers && opts.headers.Authorization) || null,
-    });
-    const route = routes[url.split('?')[0]] || { status: 401, body: { error: 'no route' } };
-    return Promise.resolve({ ok: route.status < 400, status: route.status, json: () => Promise.resolve(route.body) });
-  };
-
-  const context = {
-    window: { localStorage: storage },
-    document: {
-      readyState: 'complete',
-      querySelector: (sel) => bySel[sel] || null,
-      querySelectorAll: () => [],
-      createElement: (tag) => makeEl(tag),
-      createTextNode: (text) => makeEl('#text'),
-      addEventListener() {},
-    },
-    fetch: fetchImpl,
-    console,
-    setTimeout,
-    clearTimeout,
-  };
-  context.globalThis = context;
-  vm.createContext(context);
-  vm.runInContext(adminSource, context);
-
-  return {
-    submit: listeners.submit,
-    calls,
-    loginEl,
-    appEl,
-    loginStatus,
-    storage,
-    settle,
-  };
-}
-
-test('admin.js stores the token and shows the dashboard only after login success', async () => {
-  const { submit, calls, appEl, loginEl, storage, settle } = loadAdmin({
-    routes: {
-      '/api/admin/login': ADMIN_OK({ ok: true, accessToken: 'access-token', role: 'ADMIN', expiresInSeconds: 900 }),
-      '/api/admin/session': ADMIN_OK({ ok: true }),
-      '/api/admin/stats': ADMIN_OK({ total: 1, counts: { PENDING: 1, APPROVED: 0, COMPLETED: 0, REJECTED: 0 }, pendingVolume: 642500 }),
-      '/api/admin/orders': ADMIN_OK({ orders: [] }),
-      '/api/admin/rates': ADMIN_OK({ thbToMmk: 128.5, open: true, history: [] }),
-      '/api/admin/audit': ADMIN_OK({ rows: [], page: 1, perPage: 25, totalKeys: 0 }),
+test('exchange.js detail panel labels a MMK->THB order in its own units', async () => {
+  // rateUsed is stored per-direction (THB per MMK here), so the label must not
+  // hard-code "1 THB = X MMK": that misread MMK buys as THB sends.
+  const { orderDetail, settle } = loadExchange({
+    search: `?id=mmk-order&token=${'cd'.repeat(24)}`,
+    respondRoutes: {
+      '/api/exchange/rates': RATES_RESPONSE,
+      '/api/exchange/orders/list': {
+        status: 200,
+        body: { orders: [{ id: 'mmk-order', reference: 'SC-9', status: 'PENDING', direction: 'MMK_TO_THB', isRedacted: false, amount: 10000, receiveAmount: 77.82, rateUsed: 0.0078, createdAt: '2026-10-10T00:00:00.000Z', hasProof: false }] },
+      },
     },
   });
-
-  submit({ preventDefault() {} });
   await settle();
 
-  const loginCall = calls.fetch.find((c) => c.url === '/api/admin/login');
-  assert.ok(loginCall, 'a login attempt is made');
-  assert.equal(loginCall.method, 'POST');
-  assert.equal(loginCall.body.password, 'correct');
-
-  assert.equal(storage.getItem('sky_admin_token'), 'access-token', 'the token is stored');
-  assert.equal(appEl.hidden, false, 'the dashboard is shown');
-  assert.equal(loginEl.hidden, true, 'the login view is hidden');
-
-  const authed = calls.fetch.filter((c) => c.url !== '/api/admin/login');
-  assert.ok(authed.length >= 4, 'stats, orders, rates and audit are all fetched');
-  assert.ok(authed.every((c) => c.auth === 'Bearer access-token'), 'every dashboard call carries the token');
+  const text = subtreeText(orderDetail);
+  assert.ok(text.includes('10,000 MMK'), 'send side shows the right unit: ' + text);
+  assert.ok(text.includes('77.82 THB'), 'receive side shows THB: ' + text);
+  assert.ok(text.includes('1 MMK = 0.0078 THB'), 'rate is framed in MMK-native terms: ' + text);
 });
 
-test('admin.js clears the token and returns to login on a 401', async () => {
-  const { submit, loginEl, loginStatus, storage, settle } = loadAdmin({
-    routes: { '/api/admin/login': { status: 401, body: { error: 'Incorrect passcode' } } },
+test('exchange.js MMK->THB reset restores the live rate, not its reciprocal', async () => {
+  // rateForDirection() once returned 1/thbToMmk for MMK_TO_THB, so Reset and
+  // the empty-field fallback wrote 0.01 into a rate that calculate() then
+  // divided by - inflating the result ~rate^2 (12794 x in the fixture).
+  const { converter, SKY, settle } = loadExchange({
+    respondRoutes: { '/api/exchange/rates': RATES_RESPONSE },
   });
-
-  submit({ preventDefault() {} });
   await settle();
 
-  assert.equal(storage.getItem('sky_admin_token'), null, 'the bad token is dropped');
-  assert.equal(loginEl.hidden, false, 'the login screen is shown again');
-  assert.equal(loginStatus.attrs['data-state'], 'error');
+  SKY.state.direction = 'MMK_TO_THB';
+  converter.send.value = '10000';
+  converter.receive.value = '';
+  converter.rateInput.value = '';
+  converter.resetButton.listeners.click();
+
+  assert.equal(converter.rateInput.value, '128.50', 'Reset writes the live MMK-per-THB rate');
+  assert.equal(converter.receive.value, '77.82', '10000 MMK / 128.5 = 77.82 THB, not ~1.28M');
+  assert.ok(converter.display.textContent.includes('1 THB = 128.5 MMK'), 'display stays in THB terms');
+
+  // The empty-field fallback takes the same path as Reset.
+  converter.rateInput.value = '';
+  converter.send.listeners.input();
+  assert.equal(converter.receive.value, '77.82', 'empty rate input falls back to the live rate');
+});
+
+test('exchange.js THB->MMK reset still multiplies by the live rate', async () => {
+  const { converter, settle } = loadExchange({
+    respondRoutes: { '/api/exchange/rates': RATES_RESPONSE },
+  });
+  await settle();
+
+  converter.rateInput.value = '';
+  converter.resetButton.listeners.click();
+  assert.equal(converter.rateInput.value, '128.50');
+  assert.equal(converter.receive.value, '642,500', '5000 THB x 128.5 = 642500 MMK');
+});
+
+test('exchange.js keeps a stale guest order visible without a token', async () => {
+  // The server resolved an order whose id is not in this device's localStorage
+  // (stale link, wiped storage). Once the guest lookup returned undefined and
+  // guest.viewToken threw, the whole list collapsed into the empty state.
+  const { guestList, settle } = loadExchange({
+    guests: [{ id: 'remembered-1', viewToken: 'ab'.repeat(24) }],
+    respondRoutes: {
+      '/api/exchange/rates': RATES_RESPONSE,
+      '/api/exchange/orders/list': {
+        status: 200,
+        body: { orders: [{ id: 'other-1', reference: 'SC-2', status: 'PENDING', isRedacted: true, amount: 5000, receiveAmount: 642500, createdAt: '2026-10-10T00:00:00.000Z' }] },
+      },
+    },
+  });
+  await settle();
+
+  assert.equal(guestList.children.length, 1, 'the returned order still renders');
+  const view = guestList.children[0].children.find((c) => c.className === 'btn btn-ghost');
+  assert.ok(view, 'card carries a view link');
+  assert.ok(view.href.includes('/orders?id=other-1'), 'link points at the order');
+  assert.ok(!view.href.includes('token='), 'no remembered token, so no token is appended');
 });

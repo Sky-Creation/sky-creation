@@ -15,15 +15,21 @@ If you are an AI agent or picking this up cold, read [AGENTS.md](AGENTS.md) firs
 
 ```
 netlify.toml                        Company-site Netlify config (repo root)
-functions/                          Netlify Functions -> Brevo + exchange. NOT published
+functions/                          Netlify Functions -> Brevo, exchange storefront, site-wide admin. NOT published
   contact.mjs                       Contact form -> Brevo (lives outside site/ on purpose - see AGENTS.md)
-  exchange.mjs                      SCI Exchange app: public API + admin panel
-  exchange-lib/                     store (Netlify Blobs), validation, auth
-test/                               Node tests for the form, exchange and DNS-adjacent code. NOT published
-  main.test.mjs                     Contact form, client side
+  exchange.mjs                      SCI Exchange storefront: public /api/exchange/* only
+  admin.mjs                         Site-wide admin: ALL /api/admin/* + public /api/posts
+  exchange-lib/                     Shared storefront + admin core (orders, store, validation, auth, blobs)
+test/                               Node tests for the form, exchange, admin and seed tooling. NOT published
+  main.test.mjs                     Contact form + posts rendering, client side
   contact.test.mjs                  Contact form, server side
-  exchange.test.mjs                 Exchange app, server side
-  exchange-client.test.mjs          Exchange + admin, client side (VM)
+  exchange.test.mjs                 Exchange storefront, server side
+  exchange-client.test.mjs          Exchange storefront, client side (VM)
+  admin.test.mjs                    Admin function, server side
+  admin-client.test.mjs             Admin panel, client side (VM)
+  seed.test.mjs                     scripts/seed-admin.mjs
+scripts/                            Dev tooling, never published
+  seed-admin.mjs                    Hash a password and write the user:primary admin row
 site/                                Company site publish root
   index.html                        Landing
   about.html                        Studio and founder
@@ -32,14 +38,14 @@ site/                                Company site publish root
   contact.html                      Contact form
   exchange.html                     SCI Exchange converter + order creation
   orders.html                       Order tracking + proof upload
-  admin.html                        SCI Exchange admin panel (links are noindex/nofollow)
+  admin.html                        Site-wide admin panel (noindex, not in the sitemap)
   404.html                          Real 404 page (also the target of the deny rules)
   robots.txt, sitemap.xml
   assets/styles.css                 All styling
-  assets/main.js                    Nav, footer year, contact form, charts
+  assets/main.js                    Nav, footer year, contact form, posts (via /api/posts)
   assets/exchange.js                Converter, order form, tracking, proof upload
-  assets/admin.js                   Admin panel logic (login, orders, rates, audit)
-  assets/posts.js                   Facebook post lists
+  assets/admin.js                   Site-wide admin panel logic (login, orders, posts, settings, audit, account)
+  assets/posts.js                   Facebook post lists (static fallback for /api/posts)
   assets/favicon.svg
   founder/                          Founder portfolio (separate Netlify site)
     index.html                      Portfolio (Tailwind CDN)
@@ -118,7 +124,7 @@ The contact function is declared in the root `netlify.toml`
 Run these before pushing; CI runs the same commands.
 
 ```sh
-node --test test/*.test.mjs           # contact form, client and server
+node --test test/*.test.mjs           # contact + exchange + admin + seed (103 tests)
 python3 -m unittest discover -s infra # DNS record parsers
 ```
 
@@ -138,8 +144,12 @@ Pages:
 - `/exchange` — converter + "start an order" form (same-origin API, so the
   `connect-src 'self'` CSP stays intact)
 - `/orders` — guest order tracking via the id/token link and proof upload
-- `/admin` — passcode-gated admin panel (orders, rates, audit log). Not in the
-  sitemap and disallowed in `robots.txt`.
+- `/admin` — site-wide admin panel (dashboard, exchange orders + rates, posts,
+  settings, audit log, account). Sign-in is the seeded username or email plus a
+  password; there are no other roles yet. Not in the sitemap and disallowed in
+  `robots.txt`.
+- `/api/posts` — public post lists read by every page (admin-authored via the
+  panel; `assets/posts.js` is the static fallback when the function is down).
 
 Public API (see AGENTS.md for the full route list):
 
@@ -157,8 +167,9 @@ Deleting a blob store deletes the order history — treat "delete store" with th
 same care as `rm -rf`.
 
 Authorization model (matches sci-exchange): order *details* are only served to
-someone holding the per-order 48-hex `viewToken`; the admin panel uses a scrypt
-passcode at login and a 15-minute HMAC access token afterwards. The honeypot
+someone holding the per-order 48-hex `viewToken`; the admin panel signs in with
+a seeded scrypt-hashed account and holds a 15-minute HMAC access token
+afterwards (the refresh cookie is httpOnly and rotated on use). The honeypot
 `company` field is the only success-without-send path, exactly like the
 contact form. **Never show "sent" (or "converted") without a server answer** —
 re-adding a client-side fill-time gate is both useless and honestly worse than
@@ -195,7 +206,7 @@ deploy does need:
    | `CONTACT_TO` | `contact@skycreation.dev` |
    | `CONTACT_FROM` | a sender address already verified in Brevo (optional) |
    | `EXCHANGE_JWT_SECRET` | random high-entropy string; signs admin access tokens |
-   | `EXCHANGE_ADMIN_PASSWORD` | passcode for `/admin` (hashed at rest) |
+   | `EXCHANGE_ADMIN_PASSWORD` | initial password only; input to `scripts/seed-admin.mjs` |
    | `EXCHANGE_RATE_DEFAULT` | optional; default THB→MMK rate (defaults to 128.5) |
 
    `CONTACT_FROM` should be a verified Brevo sender. If it is omitted, the
@@ -299,8 +310,13 @@ The contact function logs provider errors without ever printing the API key.
 
 - Company, services, projects, founder: `site/*.html`
 - Mathematics pages and social links: `site/math.html`
-- Facebook posts: `site/assets/posts.js`. Both lists start empty; a section
-  with no posts is hidden rather than shown as a bare heading.
+- Facebook posts: managed from `/admin` → Posts (stored in the `SCI_ADMIN`
+  blob store, served to every page via `GET /api/posts`). The static
+  `site/assets/posts.js` remains as the fallback when the function is down;
+  both lists start empty and a section with no posts is hidden rather than
+  shown as a bare heading. Empty lists are only ever rendered from static
+  data if the API answer is missing or unparseable — a functioning API is
+  authoritative.
 - Contact addresses: `site/contact.html` and the `CONTACT_TO` / `CONTACT_FROM`
   Netlify variables — keep the visible address and the receiving address
   consistent, otherwise mail will be sent to somewhere nobody reads.

@@ -35,6 +35,14 @@
     return Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 });
   }
 
+  // Rates smaller than a cent (the MMK->THB direction, ~0.0078) must not be
+  // rounded to 0.01; show them to full precision instead.
+  function fmtRate(value) {
+    if (value === undefined || value === null || isNaN(value)) return '0';
+    if (Math.abs(value) < 0.01) return String(value);
+    return Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  }
+
   function api(path, options) {
     return fetch(path, options)
       .then(function (resp) {
@@ -63,6 +71,23 @@
     }, 2500);
   }
 
+  function directionOf(direction) {
+    return direction === 'THB_TO_MMK' ? 'THB' : 'MMK';
+  }
+
+  function receiveOf(direction) {
+    return direction === 'THB_TO_MMK' ? 'MMK' : 'THB';
+  }
+
+  // rateUsed is stored per-direction: MMK per THB for THB_TO_MMK, THB per MMK
+  // for MMK_TO_THB. Framing it as "1 THB = ... MMK" for a MMK-order was wrong.
+  function rateSummary(rateUsed, direction) {
+    if (!rateUsed) return '';
+    return direction === 'THB_TO_MMK'
+      ? '1 THB = ' + fmtRate(rateUsed) + ' MMK'
+      : '1 MMK = ' + fmtRate(rateUsed) + ' THB';
+  }
+
   function getGuestOrders() {
     try {
       var raw = window.localStorage.getItem(GUEST_KEY);
@@ -85,9 +110,12 @@
 
   // --------------------------------------------------------- rates + converter
 
+  // The rate input and the "1 THB = X MMK" display always use the live
+  // thbToMmk rate in BOTH directions; MMK_TO_THB divides by it in calculate().
+  // Returning the reciprocal here inverted the reset/empty-field result ~rate^2.
   function rateForDirection() {
     if (!state.rates) return FALLBACK_RATE;
-    return state.direction === 'THB_TO_MMK' ? state.rates.thbToMmk : 1 / state.rates.thbToMmk;
+    return state.rates.thbToMmk;
   }
 
   function applyRates(data) {
@@ -376,9 +404,9 @@
 
     panel.hidden = false;
     panel.querySelector('[data-ref]').textContent = body.reference;
-    panel.querySelector('[data-amount]').textContent = fmt(body.amount) + ' ' + (body.direction === 'THB_TO_MMK' ? 'THB' : 'MMK');
-    panel.querySelector('[data-receive]').textContent = fmt(body.receiveAmount) + ' (MMK)';
-    panel.querySelector('[data-rate]').textContent = '1 THB = ' + fmt(body.rateUsed) + ' MMK';
+    panel.querySelector('[data-amount]').textContent = fmt(body.amount) + ' ' + directionOf(body.direction);
+    panel.querySelector('[data-receive]').textContent = fmt(body.receiveAmount) + ' (' + receiveOf(body.direction) + ')';
+    panel.querySelector('[data-rate]').textContent = rateSummary(body.rateUsed, body.direction);
 
     var track = panel.querySelector('[data-track]');
     var href = '/orders?id=' + encodeURIComponent(body.orderId) + '&token=' + encodeURIComponent(body.viewToken);
@@ -410,6 +438,14 @@
     { status: 'APPROVED', label: 'Payment confirmed' },
     { status: 'COMPLETED', label: 'Payout sent' },
   ];
+
+  var proofObjectUrl = null;
+
+  function revokeProofUrl(url) {
+    if (url && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+      URL.revokeObjectURL(url);
+    }
+  }
 
   function statusBadge(status) {
     var badge = document.createElement('span');
@@ -462,9 +498,9 @@
 
     var line = document.createElement('p');
     line.className = 'ex-order-card-line';
-    line.textContent = fmt(order.amount) + ' ' + (order.direction === 'THB_TO_MMK' ? 'THB' : 'MMK') +
-      ' \u2192 ' + fmt(order.receiveAmount) + ' MMK' +
-      (order.rateUsed ? ' @ 1 THB = ' + fmt(order.rateUsed) + ' MMK' : '');
+    line.textContent = fmt(order.amount) + ' ' + directionOf(order.direction) +
+      ' \u2192 ' + fmt(order.receiveAmount) + ' ' + receiveOf(order.direction) +
+      (order.rateUsed ? ' @ ' + rateSummary(order.rateUsed, order.direction) : '');
     card.appendChild(line);
 
     var meta = document.createElement('p');
@@ -514,7 +550,11 @@
       result.body.orders.forEach(function (order) {
         if (!order) return;
         var guest = guests.find(function (g) { return g.id === order.id; });
-        var anchor = '/orders?id=' + encodeURIComponent(order.id) + '&token=' + encodeURIComponent(guest.viewToken);
+        // The server asked us to list an order the guest no longer has a token
+        // for (stale link, cleared localStorage). Show it without a token rather
+        // than collapsing the whole list on a TypeError.
+        var anchor = '/orders?id=' + encodeURIComponent(order.id) +
+          (guest && guest.viewToken ? '&token=' + encodeURIComponent(guest.viewToken) : '');
         renderOrderCard(order, anchor);
         rendered += 1;
       });
@@ -552,6 +592,8 @@
   }
 
   function renderDetail(panel, order, token) {
+    revokeProofUrl(proofObjectUrl);
+    proofObjectUrl = null;
     panel.textContent = '';
 
     var head = document.createElement('div');
@@ -564,8 +606,9 @@
 
     var amount = document.createElement('p');
     amount.className = 'ex-order-card-line';
-    amount.textContent = fmt(order.amount) + ' ' + (order.direction === 'THB_TO_MMK' ? 'THB' : 'MMK') +
-      ' \u2192 ' + fmt(order.receiveAmount) + ' MMK @ 1 THB = ' + fmt(order.rateUsed) + ' MMK';
+    amount.textContent = fmt(order.amount) + ' ' + directionOf(order.direction) +
+      ' \u2192 ' + fmt(order.receiveAmount) + ' ' + receiveOf(order.direction) +
+      ' @ ' + rateSummary(order.rateUsed, order.direction);
     panel.appendChild(amount);
 
     var timeline = document.createElement('div');
@@ -611,7 +654,9 @@
           return resp.blob();
         })
         .then(function (blob) {
-          img.src = URL.createObjectURL(blob);
+          revokeProofUrl(proofObjectUrl);
+          proofObjectUrl = URL.createObjectURL(blob);
+          img.src = proofObjectUrl;
           img.hidden = false;
         })
         .catch(function () {
@@ -631,11 +676,14 @@
 
       var status = document.createElement('p');
       status.className = 'form-status';
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-live', 'polite');
       proofBox.appendChild(status);
 
       fileInput.addEventListener('change', function () {
         var file = fileInput.files && fileInput.files[0];
         if (!file) return;
+        fileInput.disabled = true;
         status.setAttribute('data-state', 'pending');
         status.textContent = 'Uploading...';
         compressImage(file)
@@ -654,6 +702,7 @@
             setTimeout(function () { window.location.reload(); }, 1200);
           })
           .catch(function (err) {
+            fileInput.disabled = false;
             status.setAttribute('data-state', 'error');
             status.textContent = err.message || 'Upload failed. Try a JPEG or PNG under 5 MB.';
           });
@@ -714,7 +763,10 @@
     }
   }
 
-  // Exposed for the behavioural tests.
+  // Exposed for the behavioural tests. These are the same order entries the
+  // renderer already keeps in memory and localStorage under GUEST_KEY, so a
+  // same-origin script could read them anyway; hiding them from the test hook
+  // would be security theatre and would blank out the viewToken assertions.
   if (typeof window !== 'undefined') {
     window.SKY_EXCHANGE = { init: init, state: state, getGuestOrders: getGuestOrders };
   }

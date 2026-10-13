@@ -56,6 +56,29 @@ export async function verifyPassword(attempt, expected) {
   }
 }
 
+/* Password hashing for stored user rows. A random per-user salt is generated,
+ * the password is scrypt-hashed (64 bytes), and both halves are stored hex.
+ * Only hashes live in the blob store - never the password. */
+export async function scryptHash(password) {
+  const salt = randomBytes(16);
+  const derived = await scrypt(password, salt, 64);
+  return { saltHex: salt.toString('hex'), hashHex: derived.toString('hex') };
+}
+
+export async function verifyStoredHash(attempt, saltHex, hashHex) {
+  if (typeof attempt !== 'string' || attempt.length === 0) return false;
+  if (typeof saltHex !== 'string' || !/^[0-9a-f]{32}$/.test(saltHex)) return false;
+  if (typeof hashHex !== 'string' || !/^[0-9a-f]{128}$/.test(hashHex)) return false;
+  try {
+    const derived = await scrypt(attempt, Buffer.from(saltHex, 'hex'), 64);
+    const expected = Buffer.from(hashHex, 'hex');
+    if (derived.byteLength !== expected.byteLength) return false;
+    return timingSafeEqual(derived, expected);
+  } catch {
+    return false;
+  }
+}
+
 export function signAccessToken({ sub, role }, secret, ttlSeconds = ACCESS_TTL_SECONDS) {
   const header = { alg: 'HS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);

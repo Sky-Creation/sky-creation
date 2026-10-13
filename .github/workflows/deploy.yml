@@ -8,8 +8,20 @@ on:
       - 'site/**'
       - 'functions/**'
       - 'netlify.toml'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
+
+# Only one deploy in flight at a time: two pushes in quick succession would
+# otherwise race both Netlify projects (and the founder deploy depends on the
+# company deploy having already run).
+concurrency:
+  group: netlify-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   deploy:

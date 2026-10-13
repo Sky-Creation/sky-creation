@@ -285,6 +285,56 @@ class TestDigZoneRouting(unittest.TestCase):
         self.assertEqual(d.zone, "skycreation.dev")
 
 
+class TestQueryCache(unittest.TestCase):
+    """The _query_chain cache must not bake in a dig timeout as "no record"."""
+
+    def test_timeout_is_not_cached_as_missing(self):
+        # ns1 never replies (the NO_REPLY case: dig exit 9), and only the
+        # recursive resolver has the record. The first query therefore answers
+        # via the system fallback; the SECOND query must ask again, not return
+        # the cached [] from the dead authoritative server.
+        class Flaky(dns_doctor.Dig):
+            def __init__(self):
+                super().__init__(nameservers=["ns1.example.com"], zone="example.com")
+                self.calls = []
+
+            def _run(self, name, rtype, server):
+                self.calls.append(server or "system")
+                if server == "ns1.example.com":
+                    return [], False
+                return ["1.2.3.4"], True
+
+        dig = Flaky()
+        self.assertEqual(dig.query("www.example.com", "A"), ["1.2.3.4"])
+        self.assertEqual(dig.calls, ["ns1.example.com", "system"])
+        self.assertEqual(dig.query("www.example.com", "A"), ["1.2.3.4"])
+        # The dead authoritative server is probed again (its silence is not
+        # cached as "record missing"); the recursive resolver's definitive
+        # answer stays cached and is not re-run.
+        self.assertEqual(
+            dig.calls,
+            ["ns1.example.com", "system", "ns1.example.com"],
+            "a timed-out server must be re-probed, never settled from cache",
+        )
+
+    def test_definitive_empty_is_cached(self):
+        # Authoritative NXDOMAIN is an answer, not a silence: it is cached so
+        # the same name/type is not re-probed on every record check.
+        class Stub(dns_doctor.Dig):
+            def __init__(self):
+                super().__init__(nameservers=["ns1.example.com"], zone="example.com")
+                self.calls = []
+
+            def _run(self, name, rtype, server):
+                self.calls.append(server or "system")
+                return [], True
+
+        dig = Stub()
+        self.assertEqual(dig.query("www.example.com", "A"), [])
+        self.assertEqual(dig.query("www.example.com", "A"), [])
+        self.assertEqual(dig.calls.count("ns1.example.com"), 1, "definitive empty is cached")
+
+
 class TestIsBrevoVerification(unittest.TestCase):
     """Brevo publishes brevo-code:<hash>, not the older brevo-site-verification."""
 

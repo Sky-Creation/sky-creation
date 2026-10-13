@@ -4,8 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>SCI Exchange Admin</title>
-<link rel="canonical" href="https://skycreation.dev/admin">
+<title>Admin Panel - Sky Creation Innovations</title>
+<!-- No canonical on a noindex page: it tells search engines to credit a page
+     that robots explicitly must not index. The login panel is reachable only
+     via the in-page link and nature of being a known URL. -->
 <meta name="theme-color" content="#f8f9fa">
 <link rel="icon" href="/favicon.ico?v=3" sizes="any">
 <link rel="icon" href="/assets/favicon-32.png?v=3" type="image/png" sizes="32x32">
@@ -14,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/styles.css?v=20261010-1">
+<link rel="stylesheet" href="/assets/styles.css?v=20261013-2">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -34,23 +36,27 @@
 </header>
 
 <main id="main">
-  <section class="hero" style="text-align: center; display: block; padding-bottom: 2rem;">
-    <p class="eyebrow">SCI Exchange</p>
+  <section class="hero">
+    <p class="eyebrow">Restricted</p>
     <h1>Admin <span class="accent-word">panel.</span></h1>
   </section>
 
-  <section class="section" style="padding-top: 0; padding-bottom: 4rem;">
+  <section class="section">
     <div class="order-wrap" id="admin-login" hidden>
       <div class="card reveal">
-        <div class="section-head" style="text-align: left; margin-bottom: 1rem;">
-          <p class="eyebrow">Restricted</p>
-          <h2>Sign in</h2>
+        <div class="section-head">
+          <p class="eyebrow">Sign in</p>
+          <h2>Authorised staff only</h2>
         </div>
-        <p class="muted">Authorised staff only. Sign-ins are logged.</p>
+        <p class="muted">Use your admin username or email. Sign-ins are logged.</p>
         <form id="admin-login-form" data-admin-login-form novalidate>
           <label class="field">
-            <span>Passcode</span>
-            <input type="password" name="password" maxlength="200" autocomplete="current-password">
+            <span>Email or username</span>
+            <input type="text" name="identifier" maxlength="200" autocomplete="username">
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" name="password" maxlength="512" autocomplete="current-password">
           </label>
           <p id="admin-login-status" class="form-status" aria-live="polite"></p>
           <button type="submit" class="btn btn-primary">Sign in</button>
@@ -62,22 +68,30 @@
       <div class="admin-topbar">
         <div>
           <p class="eyebrow">Signed in</p>
-          <h2>SCI Exchange admin</h2>
+          <h2>Site admin</h2>
         </div>
         <button type="button" class="btn btn-ghost" id="admin-logout-btn">Sign out</button>
       </div>
 
-      <nav class="admin-tabs" role="tablist" aria-label="Admin sections">
-        <button type="button" role="tab" data-admin-tab="stats" class="active" aria-selected="true">Overview</button>
-        <button type="button" role="tab" data-admin-tab="orders" aria-selected="false">Orders</button>
-        <button type="button" role="tab" data-admin-tab="rates" aria-selected="false">Rates</button>
-        <button type="button" role="tab" data-admin-tab="audit" aria-selected="false">Audit log</button>
-      </nav>
+      <div class="admin-shell">
+        <nav class="admin-sidebar" aria-label="Admin sections">
+          <button type="button" data-admin-tab="dashboard" class="active" aria-selected="true">Dashboard</button>
+          <button type="button" data-admin-tab="exchange" aria-selected="false">Exchange</button>
+          <button type="button" data-admin-tab="posts" aria-selected="false">Posts</button>
+          <button type="button" data-admin-tab="settings" aria-selected="false">Settings</button>
+          <button type="button" data-admin-tab="audit" aria-selected="false">Audit log</button>
+          <button type="button" data-admin-tab="account" aria-selected="false">Account</button>
+        </nav>
 
-      <div id="admin-panel-stats"></div>
-      <div id="admin-panel-orders" hidden></div>
-      <div id="admin-panel-rates" hidden></div>
-      <div id="admin-panel-audit" hidden></div>
+        <div class="admin-content">
+          <div id="admin-panel-dashboard" aria-live="polite"></div>
+          <div id="admin-panel-exchange" hidden aria-live="polite"></div>
+          <div id="admin-panel-posts" hidden aria-live="polite"></div>
+          <div id="admin-panel-settings" hidden aria-live="polite"></div>
+          <div id="admin-panel-audit" hidden aria-live="polite"></div>
+          <div id="admin-panel-account" hidden aria-live="polite"></div>
+        </div>
+      </div>
     </div>
   </section>
 </main>
@@ -97,7 +111,7 @@
   <p class="footer-copy">&copy; <span data-year>2026</span> Sky Creation Innovations</p>
 </footer>
 
-<script src="/assets/main.js?v=20261010-1"></script>
-<script src="/assets/admin.js?v=20261010-1"></script>
+<script src="/assets/main.js?v=20261013-2"></script>
+  <script src="/assets/admin.js?v=20261013-2"></script>
 </body>
 </html>

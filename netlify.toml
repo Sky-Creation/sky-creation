@@ -37,18 +37,27 @@
   to = "/.netlify/functions/contact"
   status = 200
 
-# --- Exchange app -> Netlify Function (public + admin) -------------------
-# Both trees are handled by the one exchange function, which routes on the
-# original request path. Order matters: /api/contact is declared above it.
+# --- Public exchange storefront -> public exchange function ---------------
+# functions/exchange.mjs serves ONLY /api/exchange/*; admin now has its own
+# function below. Order matters but there is no overlap between the trees.
 
 [[redirects]]
   from = "/api/exchange/*"
   to = "/.netlify/functions/exchange"
   status = 200
 
+# --- Site-wide admin + public posts read -> admin function ----------------
+# functions/admin.mjs serves /api/admin/* (login, exchange admin screens,
+# posts, settings, audit, account) and the /api/posts public lists.
+
 [[redirects]]
   from = "/api/admin/*"
-  to = "/.netlify/functions/exchange"
+  to = "/.netlify/functions/admin"
+  status = 200
+
+[[redirects]]
+  from = "/api/posts"
+  to = "/.netlify/functions/admin"
   status = 200
 
 # /app used to be a byte-for-byte duplicate of /exchange; the twin pages
@@ -87,7 +96,7 @@
     Permissions-Policy = "geolocation=(), microphone=(), camera=(), interest-cohort=()"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
     X-DNS-Prefetch-Control = "off"
-    Content-Security-Policy = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; script-src 'self'; img-src 'self' data: https:;"
+    Content-Security-Policy = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; script-src 'self'; img-src 'self' data: blob: https:;"
 
 # Fingerprinted assets are not fingerprinted, so keep caching conservative.
 [[headers]]

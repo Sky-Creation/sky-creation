@@ -46,6 +46,9 @@ function load({
       value: '',
       disabled: false,
       textContent: '',
+      className: '',
+      children: [],
+      appendChild(child) { this.children.push(child); return child; },
       setAttribute(key, value) { this[key] = value; },
       removeAttribute(key) { delete this[key]; },
       ...overrides,
@@ -78,8 +81,15 @@ function load({
     },
   };
 
+  // The posts probe (/api/posts) runs on load for every page. The contact-form
+  // tests only care about submissions, so the probe is recorded separately and
+  // not counted in `calls.fetch`.
   const fetchImpl = (url, opts) => {
-    calls.fetch.push({ url, body: JSON.parse(opts.body) });
+    if (url === '/api/posts') {
+      calls.postsProbe = true;
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ company: [], math: [] }) });
+    }
+    calls.fetch.push({ url, body: JSON.parse(opts?.body || '{}') });
     if (mode === 'reject') return Promise.reject(new Error('network down'));
     return Promise.resolve({
       ok: true,
@@ -213,4 +223,163 @@ test('the honeypot input is disabled once the page has loaded', () => {
 
   assert.equal(form.elements.company.disabled, true, 'the trap is locked to humans');
   assert.equal(form.elements.company.value, '', 'it is not cleared, only disabled');
+});
+
+/* --- Facebook posts ----------------------------------------------------- */
+
+function loadPostsPage({ apiResult, apiReject = false, staticPosts = {} } = {}) {
+  const calls = { fetch: [] };
+
+  function element(overrides = {}) {
+    return {
+      value: '',
+      disabled: false,
+      textContent: '',
+      className: '',
+      hidden: false,
+      children: [],
+      appendChild(child) { this.children.push(child); return child; },
+      setAttribute(key, value) { this[key] = value; },
+      removeAttribute(key) { delete this[key]; },
+      ...overrides,
+    };
+  }
+
+  function makeSection(key) {
+    const list = {
+      className: 'post-list',
+      children: [],
+      appendChild(child) { this.children.push(child); return child; },
+    };
+    const section = {
+      hidden: false,
+      children: [],
+      appendChild(child) { this.children.push(child); return child; },
+      getAttribute: () => key,
+      querySelector: (sel) => (sel === '.post-list' ? list : null),
+    };
+    return { section, list };
+  }
+
+  const company = makeSection('company');
+  const math = makeSection('math');
+
+  const fetchImpl = (url) => {
+    calls.fetch.push(url);
+    if (apiReject) return Promise.reject(new Error('network down'));
+    return Promise.resolve(apiResult || { ok: true, json: () => Promise.resolve({ company: [], math: [] }) });
+  };
+
+  const context = {
+    window: { SKY_POSTS: staticPosts },
+    document: {
+      querySelector: () => null,
+      querySelectorAll: (sel) => (sel === '[data-posts]' ? [company.section, math.section] : []),
+      createElement: () => element(),
+      addEventListener() {},
+    },
+    fetch: fetchImpl,
+    console,
+    setTimeout,
+    clearTimeout,
+  };
+  context.globalThis = context;
+  vm.createContext(context);
+  vm.runInContext(source, context);
+
+  const settle = () => new Promise((r) => setImmediate(r));
+  return { calls, company, math, settle };
+}
+
+test('posts are read from the admin API and rendered in order', async () => {
+  const { calls, company, settle } = loadPostsPage({
+    apiResult: {
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          company: [
+            { date: '2026-01-01', text: 'newer', url: 'https://facebook.com/x' },
+            { date: '2025-12-01', text: 'older' },
+          ],
+          math: [],
+        }),
+    },
+  });
+
+  await settle();
+
+  assert.deepEqual(calls.fetch, ['/api/posts'], 'the page reads posts from the function');
+  assert.equal(company.section.hidden, false, 'a populated list shows its section');
+  assert.equal(company.list.children.length, 2);
+  assert.equal(
+    company.list.children[0].children[1].textContent,
+    'newer',
+    'posts are ordered newest first'
+  );
+  assert.equal(company.list.children[1].children[1].textContent, 'older');
+  assert.equal(
+    company.list.children[0].children[2].href,
+    'https://facebook.com/x',
+    'the external link is rendered'
+  );
+});
+
+// Once the admin panel can author posts, the API response is authoritative:
+// an empty list from the function must hide the section even when the static
+// posts.js data has content. The static data is only a fallback for a failed
+// or unparseable response, never a merge.
+test('an empty API list hides the section even when static data exists', async () => {
+  const { calls, math, settle } = loadPostsPage({
+    apiResult: { ok: true, json: () => Promise.resolve({ company: [], math: [] }) },
+    staticPosts: { math: [{ date: '2025-01-01', text: 'fallback' }] },
+  });
+
+  await settle();
+
+  assert.equal(math.section.hidden, true, 'a functioning API wins over static data');
+  assert.equal(math.list.children.length, 0);
+  assert.equal(calls.fetch[0], '/api/posts');
+});
+
+test('a failed /api/posts request falls back to the static data', async () => {
+  const { calls, company, settle } = loadPostsPage({
+    apiReject: true,
+    staticPosts: { company: [{ date: '2025-01-01', text: 'static' }] },
+  });
+
+  await settle();
+
+  assert.equal(company.section.hidden, false);
+  assert.equal(company.list.children[0].children[1].textContent, 'static');
+});
+
+test('an empty list hides its section', async () => {
+  const { company, math, settle } = loadPostsPage({
+    apiResult: { ok: true, json: () => Promise.resolve({ company: [], math: [] }) },
+  });
+
+  await settle();
+
+  assert.equal(company.section.hidden, true, 'empty company posts hide the section');
+  assert.equal(math.section.hidden, true, 'empty math posts hide the section');
+});
+
+test('post text is rendered as plain text, never markup', async () => {
+  const { company, settle } = loadPostsPage({
+    apiResult: {
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          company: [{ date: '2025-01-01', text: '<img src=x onerror=alert(1)>' }],
+        }),
+    },
+  });
+
+  await settle();
+
+  assert.equal(
+    company.list.children[0].children[1].textContent,
+    '<img src=x onerror=alert(1)>',
+    'textContent assignment keeps attacker markup inert'
+  );
 });

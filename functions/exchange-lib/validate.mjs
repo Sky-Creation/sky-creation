@@ -21,6 +21,11 @@ const MAX_ACCOUNT_NAME = 120;
 const MAX_NOTE = 1000;
 const MAX_METHOD = 64;
 
+export const MAX_POST_TEXT = 4000;
+export const MAX_POST_URL = 2000;
+export const POST_LISTS = new Set(['company', 'math']);
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
 export const DIRECTIONS = new Set(['THB_TO_MMK', 'MMK_TO_THB']);
 export const LEVELS = new Set(['Standard', 'Express', 'VIP']);
 export const ORDER_STATUSES = new Set([
@@ -154,6 +159,33 @@ export function parseRateInput(body) {
     throw new Error('thbToMmk must be a positive finite number');
   }
   return { thbToMmk: rate };
+}
+
+/* Parse a Facebook post in either list: { date, text, url? }. date must be an
+ * ISO calendar date, text 1..4000 characters, url optional and http(s). */
+export function parsePostInput(body) {
+  const date = cleanText(body.date, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error('date must be a YYYY-MM-DD calendar date');
+  }
+  const when = new Date(`${date}T00:00:00Z`);
+  if (isNaN(when.getTime()) || when.toISOString().slice(0, 10) !== date) {
+    throw new Error('date is not a real calendar date');
+  }
+
+  const text = String(body.text ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .trim();
+  if (!text) throw new Error('text is required');
+  if (text.length > MAX_POST_TEXT) throw new Error('text is too long');
+
+  const url = cleanText(body.url, MAX_POST_URL);
+  if (url && !/^https?:\/\/[^\s]+$/.test(url)) {
+    throw new Error('url must be an http(s) link');
+  }
+
+  return { date, text, url };
 }
 
 /* Read a proof payload: { token, mimeType, fileName?, dataBase64 }.

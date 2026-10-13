@@ -179,13 +179,19 @@ class Dig:
             if cached is not None:
                 return cached  # already settled, empty list included
             records, definitive = self._run(name, rtype, server)
-            with self._lock:
-                self._cache[key] = records
-            if server and definitive:
-                # Remember the first server that answers; not every assigned
-                # nameserver is reachable from every network, and re-probing a
-                # dead one on every record is what makes this slow.
-                self._preferred = server
+            # A non-definitive answer (timeout, no reply) must NOT be cached:
+            # the next server in the chain exists precisely to be tried when
+            # this one did not answer. Caching its [] once made every later
+            # query settle on "record missing" without ever reaching a server
+            # that has it. Definitive empties (NXDOMAIN) still cache correctly.
+            if definitive:
+                with self._lock:
+                    self._cache[key] = records
+                if server:
+                    # Remember the first server that answers; not every assigned
+                    # nameserver is reachable from every network, and re-probing a
+                    # dead one on every record is what makes this slow.
+                    self._preferred = server
             if records or definitive:
                 return records
         return []

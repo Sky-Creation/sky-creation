@@ -57,28 +57,30 @@
   }
 
   // --- Facebook posts ----------------------------------------------------
-  // Rendered from assets/posts.js. The containing <section> is hidden while the
-  // matching list is empty, so an unfilled slot never shows a bare heading.
+  // The site reads posts from the admin panel via GET /api/posts
+  // (functions/admin.mjs). assets/posts.js - window.SKY_POSTS - is the static
+  // fallback so the pages still show their lists if the function is down.
+  // A section is hidden while its matching list is empty, so an unfilled slot
+  // never shows a bare heading. Text is rendered with textContent only.
   var postLists = document.querySelectorAll('[data-posts]');
 
-  Array.prototype.forEach.call(postLists, function (section) {
-    var key = section.getAttribute('data-posts');
-    var posts = (window.SKY_POSTS && window.SKY_POSTS[key]) || [];
+  function renderPosts(posts) {
+    posts = posts || {};
+    Array.prototype.forEach.call(postLists, function (section) {
+      var key = section.getAttribute('data-posts');
+      var listPosts = (posts[key] || []).slice();
 
-    if (!posts.length) {
-      section.hidden = true;
-      return;
-    }
+      if (!listPosts.length) {
+        section.hidden = true;
+        return;
+      }
 
-    var list = section.querySelector('.post-list');
-    if (!list) return;
+      var list = section.querySelector('.post-list');
+      if (!list) return;
 
-    posts
-      .slice()
-      .sort(function (a, b) {
+      listPosts.sort(function (a, b) {
         return String(b.date || '').localeCompare(String(a.date || ''));
-      })
-      .forEach(function (post) {
+      }).forEach(function (post) {
         var item = document.createElement('li');
         item.className = 'post';
 
@@ -104,7 +106,27 @@
 
         list.appendChild(item);
       });
-  });
+    });
+  }
+
+  function loadPosts() {
+    if (typeof fetch !== 'function') {
+      renderPosts(window.SKY_POSTS);
+      return;
+    }
+    fetch('/api/posts', { headers: { Accept: 'application/json' } })
+      .then(function (response) {
+        return response.json().catch(function () { return null; });
+      })
+      .then(function (data) {
+        renderPosts(data && typeof data === 'object' ? data : window.SKY_POSTS);
+      })
+      .catch(function () {
+        renderPosts(window.SKY_POSTS);
+      });
+  }
+
+  loadPosts();
 
   function formatDate(value) {
     if (!value) return '';
@@ -260,7 +282,11 @@
 
   var copyButtons = document.querySelectorAll ? document.querySelectorAll('[data-copy]') : [];
   Array.prototype.forEach.call(copyButtons, function (btn) {
-    btn.addEventListener('click', function () {
+    btn.addEventListener('click', function (event) {
+      // The button sits inside a mailto anchor on the contact page; without
+      // this, clicking Copy also opens the mail client.
+      if (event && event.preventDefault) event.preventDefault();
+      if (event && event.stopPropagation) event.stopPropagation();
       var text = btn.getAttribute('data-copy');
       if (!text) return;
       if (navigator && navigator.clipboard && navigator.clipboard.writeText) {

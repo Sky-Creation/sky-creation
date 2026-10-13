@@ -10,6 +10,8 @@ on:
       - "test/**"
       - "functions/**"
       - ".github/**"
+      - "package.json"
+      - "package-lock.json"
       - "netlify.toml"
   pull_request:
     paths:
@@ -19,6 +21,8 @@ on:
       - "test/**"
       - "functions/**"
       - ".github/**"
+      - "package.json"
+      - "package-lock.json"
       - "netlify.toml"
   workflow_dispatch:
 
@@ -48,7 +52,7 @@ jobs:
       - name: Syntax-check the JavaScript
         run: |
           set -euo pipefail
-          for file in site/assets/*.js functions/*.mjs; do
+          for file in site/assets/*.js functions/*.mjs functions/exchange-lib/*.mjs; do
             echo "checking $file"
             node --check "$file"
           done
@@ -94,25 +98,31 @@ jobs:
       - name: Verify every internal link target exists
         # Handles both link styles in the repo: root-relative ("/about", which
         # Netlify resolves through pretty_urls) and page-relative
-        # ("assets/styles.css"). Both site/ and maintenance/ are checked because
-        # either can be the live publish root.
+        # ("assets/styles.css"). Scripts and images are checked too (src,
+        # srcset), not just anchors. Both site/ and maintenance/ are checked,
+        # and root-relative targets resolve against whichever publish root the
+        # page itself sits in - "../" alone can silently 404 a maintenance page.
         run: |
           set -euo pipefail
           missing=0
           for page in site/*.html maintenance/*.html; do
-            for href in $(grep -o 'href="[^"#][^"]*"' "$page" | sed 's/href="//; s/"$//'); do
-              case "$href" in
+            root="$(dirname "$page")"
+            # href/src plus the comma-separated srcset list (URLs may carry a
+            # trailing " 1x"/" 2x" descriptor that must not be tested as part
+            # of the path).
+            for raw in \
+              $(grep -oE '(href|src)="[^"#][^"]*"' "$page" | sed -E 's/^(href|src)="//; s/"$//') \
+              $(grep -oE 'srcset="[^"]*"' "$page" | sed -E 's/^srcset="//; s/"$//' | tr ',' '\n' | awk '{print $1}'); do
+              case "$raw" in
                 http*|mailto:*|tel:*|//*|"") continue ;;
               esac
-              clean="${href%%#*}"
+              clean="${raw%%#*}"
               clean="${clean%%\?*}"
               if [ "${clean:0:1}" = "/" ]; then
-                # Root-relative: resolve against the publish directory.
-                target="site$clean"
-                candidates="$target $target.html $target/index.html"
+                # Root-relative: resolve against the page's own publish root.
+                candidates="$root$clean $root$clean.html $root$clean/index.html"
               else
-                target="$(dirname "$page")/$clean"
-                candidates="$target"
+                candidates="$root/$clean"
               fi
               found=0
               for candidate in $candidates; do
@@ -122,7 +132,7 @@ jobs:
                 fi
               done
               if [ "$found" -eq 0 ]; then
-                echo "missing: $page -> $href"
+                echo "missing: $page -> $raw"
                 missing=1
               fi
             done

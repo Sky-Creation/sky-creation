@@ -31,6 +31,7 @@ export async function openStores(event) {
     return {
       store: new InMemoryStore(),
       proofs: new InMemoryStore(),
+      admin: new InMemoryStore(),
       mode: 'memory',
     };
   }
@@ -46,6 +47,9 @@ export async function openStores(event) {
     // uncachedEdgeURL, so requesting strong reads throws at runtime.
     store: new JsonStore(getStore('SCI_EXCHANGE_ORDERS')),
     proofs: new JsonStore(getStore('SCI_EXCHANGE_PROOFS')),
+    // Users, sessions, the unified audit log and the posts lists. One store
+    // per logical site so a worst-case store wipe only loses one domain.
+    admin: new JsonStore(getStore('SCI_ADMIN')),
     mode: 'blobs',
   };
 }
