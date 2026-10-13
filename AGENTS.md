@@ -81,7 +81,7 @@ site/                     Company site publish root
 maintenance/              Emergency fallback, NOT published
 infra/
   dns_doctor.py           Read-only DNS health check
-  test_dns_doctor.py      Parser tests (41 tests)
+  test_dns_doctor.py      Parser tests (48 tests)
 .github/workflows/
   check.yml               Tests + syntax + link check on every push
   deploy.yml              AUTO-DEPLOYS on every push to main (see §4)
@@ -101,7 +101,7 @@ actually happened: `/test/*.test.mjs` and `/functions/contact.mjs` served 200 on
 ```sh
 # Tests - CI runs exactly these
 node --test test/*.test.mjs             # 103 tests (14 main + 14 contact + 25 exchange server + 9 exchange client + 28 admin server + 10 admin client + 3 seed)
-python3 -m unittest discover -s infra   # 41 tests
+python3 -m unittest discover -s infra   # 48 tests
 
 # Deploy happens automatically on every push to main (both sites; deploy.yml).
 # Manual deploy is the same commands the workflow runs (see §4, §5):
@@ -443,13 +443,17 @@ been confirmed to appear in logs. Worth checking in the Netlify dashboard.
 
 ## 8. Verified state at handoff
 
-- 103 Node tests, 41 Python tests passing (the admin split is home; posts are
+- 103 Node tests, 48 Python tests passing (the admin split is home; posts are
   now read from `/api/posts` with `assets/posts.js` as fallback)
 - Site-wide admin panel live on `skycreation.dev`: seeded login (200 + JWT),
   `/api/posts` → `{"company":[],"math":[]}`, admin order list full (`senderName`,
   `isRedacted:false`) while the guest list stays redacted, delete works, CSP
   `img-src` includes `blob:` for the proof preview
-- DNS watch: **12 pass, 0 warn, 0 fail** (was 0 pass / 3 fail)
+- DNS watch with the Spaceship control-plane cross-check enabled (`SPACESHIP_*`
+  secrets set): **13 pass, 0 warn, 0 fail** (was 0 pass / 3 fail before the
+  parser fixes, and 12 pass / 0 warn without the cross-check). Two live-only
+  bugs were fixed to get there: the API 403s the default urllib User-Agent, and
+  it reports zone-relative names so FQDN lookups missed every record.
 - All five pages return 200 on `https://skycreation.dev`; `/exchange`,
   `/orders` and `/admin` return 200; `/app` 301s to `/exchange`
 - `/test/*` and `/functions/*` return **404**; `/robots.txt` and `/sitemap.xml`
