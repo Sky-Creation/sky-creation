@@ -178,6 +178,30 @@ editor, settings, audit list, account) was live-verified end to end on
 | `d359428` | 2026-10-13 | Match Spaceship zone names *relative*, not as FQDNs. The API returns zone-relative names (`@`, `brevo1._domainkey`); comparing whole FQDNs missed every record. |
 | `eff9d4e` | 2026-10-13 | Record the cross-check as live and clean. |
 
+---
+
+## Phase 9 — Documentation shipped, functions live-verified (2026-10-13)
+
+| Hash | Date | Why it mattered |
+| --- | --- | --- |
+| `c3b8ef7` | 2026-10-13 | Ship the `docs/` folder (14 files: README, architecture, setup, deploy, runbook, testing, contact, exchange, admin, DNS, CI/CD, decisions, secrets, plus the build history). Every doc commits to a one-line purpose, "read this when" bullets and a change-log-only rule in `history.md` — no root CHANGELOG. |
+| `81847e8` | 2026-10-13 | Record the rate-limit reality. The order-create and admin-login counters live per **warm instance**, so across the fleet the effective limit is approximate; a live burst of 16 post-limit order creates drew no `429` because Netlify spread them across instances. Corrected the store-comment lie (`SCI_PROOFS` → `SCI_EXCHANGE_PROOFS`) in the admin function header. |
+
+The full fleet was then exercised live on `skycreation.dev` with one throwaway
+order, one proof and one real contact email (deleted afterwards — order via the
+admin API, `proof:<id>` and `proof:meta:<id>` via the blob CLI):
+39/**39** checks passed. Contact: method gate `405`, honeypot, validation
+`400`, 20 KB body `413`, real send. Exchange: rates shape, calculate valid /
+below-minimum / bad-direction / `Infinity` / `__proto__` all as documented,
+honeypot, validation, create, redaction lift with `viewToken` and the
+`x-view-token` header, wrong-token no-lift, `404`, list redaction, proof
+upload + fetch + wrong-token `404`. Admin: unauth `401`, wrong identifier and
+wrong password both `401`, login → `ADMIN` session, dashboard, audit, full
+order listing (`isRedacted:false`), order `viewToken`, illegal transition
+`400`, approve → complete → delete, refresh rotation with replay rejected
+`401`, logout. The logout route confirmed to require the Bearer token, and the
+URL-keyed proof `404` confirmed rather than guessed.
+
 Final `dns-watch` result with both fixes: **13 pass, 0 warn, 0 fail, 3 info.**
 
 ---
