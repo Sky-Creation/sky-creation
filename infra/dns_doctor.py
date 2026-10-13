@@ -66,6 +66,11 @@ SPF_LOOKUP_LIMIT = 10
 
 SPACESHIP_API = "https://spaceship.dev/api/v1"
 
+#: Spaceship sits behind a WAF that answers 403 to the default
+#: "Python-urllib/x.y" agent, so the API call has to look like a normal client.
+#: Live-only: curl with the same credentials returns 200.
+SPACESHIP_UA = "dns_doctor/1.0 (+https://skycreation.dev)"
+
 PASS, WARN, FAIL, INFO = "PASS", "WARN", "FAIL", "INFO"
 
 _SYMBOLS = {PASS: "ok  ", WARN: "warn", FAIL: "FAIL", INFO: "--  "}
@@ -279,7 +284,12 @@ class Spaceship:
         url = f"{SPACESHIP_API}/{path.lstrip('/')}"
         request = urllib.request.Request(
             url,
-            headers={"X-API-Key": self.key, "X-API-Secret": self.secret, "Accept": "application/json"},
+            headers={
+                "X-API-Key": self.key,
+                "X-API-Secret": self.secret,
+                "Accept": "application/json",
+                "User-Agent": SPACESHIP_UA,
+            },
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             return json.loads(response.read().decode("utf-8"))

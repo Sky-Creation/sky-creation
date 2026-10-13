@@ -394,5 +394,53 @@ class TestCheckBrevoVerification(unittest.TestCase):
         self.assertFalse(doc.failed)
 
 
+class TestSpaceshipRequestHeaders(unittest.TestCase):
+    """Spaceship's WAF answers 403 to the default Python-urllib User-Agent.
+
+    Found live: the control-plane cross-check returned HTTP 403 in CI while
+    curl with the same credentials returned 200. A normal User-Agent is the
+    fix, and this pins it so it cannot be dropped again. The in-memory checks
+    never touch the real API, so nothing else would catch this.
+    """
+
+    def _capture_request(self):
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"items": []}'
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return FakeResponse()
+
+        original = dns_doctor.urllib.request.urlopen
+        dns_doctor.urllib.request.urlopen = fake_urlopen
+        try:
+            ship = dns_doctor.Spaceship("skycreation.dev", "key", "secret")
+            ship.load()
+        finally:
+            dns_doctor.urllib.request.urlopen = original
+        return captured["request"]
+
+    def test_sends_a_non_default_user_agent(self):
+        request = self._capture_request()
+        ua = request.get_header("User-agent")
+        self.assertEqual(ua, dns_doctor.SPACESHIP_UA)
+        self.assertNotIn("urllib", ua.lower())
+
+    def test_sends_credentials_and_accept_headers(self):
+        request = self._capture_request()
+        self.assertEqual(request.get_header("X-api-key"), "key")
+        self.assertEqual(request.get_header("X-api-secret"), "secret")
+        self.assertEqual(request.get_header("Accept"), "application/json")
+
+
 if __name__ == "__main__":
     unittest.main()
