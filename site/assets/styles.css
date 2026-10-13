@@ -1854,20 +1854,7 @@ p:last-child {
 /* --- dark theme (admin and the rest of the site, opt-in by the OS) --- */
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121417;
-    --bg-alt: #1a1d21;
-    --surface: #1f2328;
-    --surface-2: #2a2f36;
-    --text: #e9ecef;
-    --muted: #a7b1bc;
-    --accent: #4d94ff;
-    --accent-ink: #0b1220;
-    --accent-2: #6ea8ff;
-    --border: #2b3036;
-    --border-strong: #3a4047;
-    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
-  }
+  /* Disabled: force light theme to match founder page */
 }
 
 
