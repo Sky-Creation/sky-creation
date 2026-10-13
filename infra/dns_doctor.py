@@ -307,14 +307,29 @@ class Spaceship:
         self.items = payload.get("items", []) if isinstance(payload, dict) else []
         return True
 
+    def _normalise(self, name: object) -> str:
+        """Reduce a name to Spaceship's zone-relative form.
+
+        The API reports names relative to the zone ("@" for the apex, "www",
+        "brevo1._domainkey"), but the checks ask in fully-qualified form. Both
+        have to land on the same key, or every lookup silently misses and the
+        cross-check cries wolf about records that are right there.
+        """
+        name = str(name).rstrip(".").lower()
+        zone = self.domain.rstrip(".").lower()
+        if name in ("", "@", zone):
+            return "@"
+        suffix = "." + zone
+        return name[: -len(suffix)] if name.endswith(suffix) else name
+
     def find(self, name: str, rtype: str) -> list[dict]:
         if not self.items:
             return []
-        want = name.rstrip(".").lower()
+        want = self._normalise(name)
         return [
             item
             for item in self.items
-            if str(item.get("name", "")).rstrip(".").lower() == want
+            if self._normalise(item.get("name", "")) == want
             and str(item.get("type", "")).upper() == rtype.upper()
         ]
 

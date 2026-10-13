@@ -442,5 +442,69 @@ class TestSpaceshipRequestHeaders(unittest.TestCase):
         self.assertEqual(request.get_header("Accept"), "application/json")
 
 
+class TestSpaceshipNameNormalisation(unittest.TestCase):
+    """The API reports zone-relative names; the checks ask in FQDN form.
+
+    Found live: the apex A record and both Brevo DKIM CNAMEs exist in the zone,
+    yet the cross-check reported "no apex record" and warned that both DKIM
+    selectors were missing, because "brevo1._domainkey" never equalled
+    "brevo1._domainkey.skycreation.dev".
+    """
+
+    def _ship(self):
+        ship = dns_doctor.Spaceship("skycreation.dev", "k", "s")
+        ship.items = [
+            {"name": "@", "type": "A", "address": "75.2.60.5"},
+            {"name": "brevo1._domainkey", "type": "CNAME", "cname": "b1.skycreation-dev.dkim.brevo.com"},
+            {"name": "www", "type": "CNAME", "cname": "sky-creation.netlify.app"},
+        ]
+        return ship
+
+    def test_apex_matches_at_and_fqdn(self):
+        ship = self._ship()
+        self.assertTrue(ship.has("@", "A"))
+        self.assertTrue(ship.has("skycreation.dev", "A"))
+        self.assertTrue(ship.has("skycreation.dev.", "A"))
+
+    def test_subdomain_matches_relative_and_fqdn(self):
+        ship = self._ship()
+        self.assertTrue(ship.has("brevo1._domainkey", "CNAME"))
+        self.assertTrue(ship.has("brevo1._domainkey.skycreation.dev", "CNAME"))
+        self.assertTrue(ship.has("www.skycreation.dev", "CNAME"))
+
+    def test_absent_record_is_false(self):
+        ship = self._ship()
+        self.assertFalse(ship.has("brevo2._domainkey.skycreation.dev", "CNAME"))
+        self.assertFalse(ship.has("skycreation.dev", "MX"))
+
+
+class TestCheckControlPlane(unittest.TestCase):
+    def _doc(self, items):
+        ship = dns_doctor.Spaceship("skycreation.dev", "k", "s")
+        ship.items = items
+        doc = dns_doctor.Doctor("skycreation.dev")
+        dns_doctor.check_control_plane(doc, ship)
+        return doc
+
+    def test_present_records_produce_no_warning(self):
+        # Exactly the shape the live API returns for this zone.
+        doc = self._doc(
+            [
+                {"name": "@", "type": "A", "address": "75.2.60.5"},
+                {"name": "brevo1._domainkey", "type": "CNAME", "cname": "b1.skycreation-dev.dkim.brevo.com"},
+                {"name": "brevo2._domainkey", "type": "CNAME", "cname": "b2.skycreation-dev.dkim.brevo.com"},
+            ]
+        )
+        self.assertFalse(doc.warned)
+        by_check = {f.check: f.level for f in doc.findings}
+        self.assertEqual(by_check["spaceship-api"], dns_doctor.PASS)
+        self.assertEqual(by_check["apex-in-zone"], dns_doctor.INFO)
+
+    def test_missing_dkim_warns(self):
+        doc = self._doc([{"name": "@", "type": "A", "address": "75.2.60.5"}])
+        self.assertTrue(doc.warned)
+        self.assertFalse(doc.failed)
+
+
 if __name__ == "__main__":
     unittest.main()
