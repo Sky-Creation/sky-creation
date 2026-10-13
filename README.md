@@ -10,11 +10,13 @@ Everything here is free-tier only: Netlify for hosting, Brevo for the contact
 form, GitHub Actions for DNS monitoring, Spaceship for DNS.
 
 If you are an AI agent or picking this up cold, read [AGENTS.md](AGENTS.md) first.
+For step-by-step guides and the full build history, see [docs/](docs/README.md).
 
 ## Layout
 
 ```
 netlify.toml                        Company-site Netlify config (repo root)
+docs/                               Guides + build history (start at docs/README.md)
 functions/                          Netlify Functions -> Brevo, exchange storefront, site-wide admin. NOT published
   contact.mjs                       Contact form -> Brevo (lives outside site/ on purpose - see AGENTS.md)
   exchange.mjs                      SCI Exchange storefront: public /api/exchange/* only

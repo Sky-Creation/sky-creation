@@ -51,6 +51,7 @@ functions/                Netlify Functions -> Brevo, exchange storefront, site-
     orders.mjs            Shared storefront + admin core: createOrderStore({store, proofs, auditStore, env}); storefront AND admin both call it
     http.mjs              httpError / ok / fail / parseJsonBody / bearerToken
 package.json              Sole dep @netlify/blobs (needed by store.mjs only)
+docs/                     Guides + build history. Start at docs/README.md; AGENTS.md stays the authoritative rules
 test/                     Node tests. NOT under site/, never published (103)
   main.test.mjs           Contact form + posts rendering, client side
   contact.test.mjs        Contact form, server side
@@ -73,6 +74,7 @@ site/                     Company site publish root
   404.html                Real 404 page, and the target of the deny rules
   robots.txt, sitemap.xml
   assets/styles.css       All styling
+  assets/main.js          Nav, footer year, contact form, posts (via /api/posts)
   assets/exchange.js      Converter, order form, tracking, proof
   assets/admin.js         Site-wide admin panel logic (login, dashboard, orders/rates, posts, settings, audit, account)
   assets/posts.js         Facebook post lists (STATIC FALLBACK for /api/posts - see §6)
