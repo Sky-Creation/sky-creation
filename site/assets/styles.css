@@ -169,10 +169,11 @@ a:hover {
   font-size: 0.95rem;
 }
 
-.site-nav a:hover,
-.site-nav a[aria-current="page"] {
-  color: var(--text);
-}
+  .site-nav a:hover,
+  .site-nav a[aria-current="page"] {
+    background: var(--surface-2);
+    color: var(--text);
+  }
 
 /* The founder portfolio is a separate subdomain (founder.skycreation.dev),
    sourced from site/founder/ in this repo. Marked so nobody expects to stay
@@ -870,16 +871,18 @@ p:last-child {
     left: 0;
     right: 0;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 0;
     background: var(--bg-alt);
     border-bottom: 1px solid var(--border);
-    /* For animation */
     display: flex;
     overflow: hidden;
     max-height: 0;
     opacity: 0;
     padding: 0 1.5rem;
+    margin: 0 1rem;
+    border-radius: 0 0 var(--radius) var(--radius);
+    box-shadow: var(--shadow);
     transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease, visibility 0.3s;
     visibility: hidden;
   }
@@ -887,13 +890,14 @@ p:last-child {
   .site-nav[data-open="true"] {
     max-height: 400px;
     opacity: 1;
-    padding: 0.5rem 1.5rem 1rem;
+    padding: 0.75rem 1.25rem 1rem;
     visibility: visible;
   }
 
   .site-nav a {
-    padding: 0.6rem 0;
+    padding: 0.75rem 0.75rem;
     width: 100%;
+    border-radius: var(--radius-sm);
   }
 
   .hero-split {
