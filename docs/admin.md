@@ -83,7 +83,10 @@ Implemented in `functions/exchange-lib/auth.mjs`; configured by
 - **Wrong identifier vs wrong password** answer identically (`401`).
 - **Lockout** — 5 failed logins freeze the account for 15 minutes (`403`,
   audited as `auth.locked`); the fifth failure's response *is* the lockout.
-- **Rate limit** — 10 login attempts per IP per 10 minutes (`429`).
+- **Rate limit** — 10 login attempts per IP per 10 minutes (`429`), held in
+  memory like the order-create limiter: **per warm instance**, so across the
+  fleet the effective limit is approximate (a live burst proved this: 16
+  post-limit attempts on one IP, no `429`; the invariant is unit-tested).
 - **Timing-safe compare** — `timingSafeEqual` throws on a length mismatch, so
   `auth.mjs` guards lengths first; an empty signature must throw `TokenError`,
   never a `RangeError`.

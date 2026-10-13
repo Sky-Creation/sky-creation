@@ -10,7 +10,7 @@
  *
  * Data stores (see exchange-lib/store.mjs for consistency notes):
  *   SCI_EXCHANGE_ORDERS    orders, rate:current, setting:open, proofs meta
- *   SCI_PROOFS             proof binaries
+ *   SCI_EXCHANGE_PROOFS    proof binaries
  *   SCI_ADMIN              users, sessions, unified audit log, posts
  *
  * Routes:

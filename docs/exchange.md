@@ -44,7 +44,12 @@ these; every other path is `404`.
 
 1. **Rate limit first** — 10 creates per IP per 10 minutes
    (`makeLimiter(10, 10 * 60 * 1000)`). Over the limit returns
-   `429 {ok:true, discarded:true, error:"rate limited"}`.
+   `429 {ok:true, discarded:true, error:"rate limited"}`. The counter is held
+   in a module-level `Map` per **warm instance**, so across the fleet the
+   effective limit is approximate (more requests than an instance saw can get
+   through; fewer can be blocked). The invariant is unit-tested in
+   `test/exchange.test.mjs`; a live burst of 16 post-limit attempts drew no
+   `429` because Netlify spread them across instances.
 2. **Honeypot** — a non-empty `company` field logs
    `exchange: honeypot triggered, order discarded` and returns
    `{ok:true, discarded:true}` **persisting nothing**. This is the only
