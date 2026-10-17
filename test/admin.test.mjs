@@ -26,6 +26,7 @@ const m = join(here);
 
 const ENV = {
   EXCHANGE_JWT_SECRET: 'test-secret',
+  RATE_LIMIT_HMAC_KEY: 'test-only-rate-limit-key-that-is-never-deployed',
   // Only used as the seed input at bootstrap; verifyStoredHash never sees it.
   EXCHANGE_ADMIN_PASSWORD: 'seed-only',
 };
@@ -173,25 +174,27 @@ test('the login limit engages from one IP on successful attempts too', async () 
   assert.ok(limited >= 1, 'the login rate limit engages');
 });
 
-test('five failed logins lock the account and the audit records it', async () => {
+test('five failed logins from one IP trip the login rate limit', async () => {
   const ctx = await newAdmin();
-  // The fifth failure is the one that trips the lockout and is reported as
-  // such; the four before it are plain invalid-credential answers.
-  for (let i = 0; i < 4; i += 1) {
-    const res = await login(ctx, { password: 'wrong' });
+  // Per-IP limit is 5 / 15 min. Five failures fill the window; the sixth is 429.
+  for (let i = 0; i < 5; i += 1) {
+    const res = await login(ctx, { password: 'wrong', ip: '198.51.100.70' });
     assert.equal(res.statusCode, 401);
   }
-  const locked = await login(ctx, { password: 'wrong' });
-  assert.equal(locked.statusCode, 403, 'the fifth failure reports the lockout');
+  const limited = await login(ctx, { password: 'wrong', ip: '198.51.100.70' });
+  assert.equal(limited.statusCode, 429, 'the sixth attempt from the same IP is rate limited');
+  assert.match(JSON.parse(limited.body).error, /too many requests/i);
+  assert.ok(limited.headers['Retry-After'], 'Retry-After is set');
 
-  const evenCorrect = await login(ctx);
-  assert.equal(evenCorrect.statusCode, 403, 'even the right password is refused while locked');
+  // A different IP can still try (and succeed) — there is no account lockout.
+  const otherIp = await login(ctx, { ip: '198.51.100.71' });
+  assert.equal(otherIp.statusCode, 200);
 
-  const token = signAccessToken({ sub: 'primary', role: 'ADMIN' }, ENV.EXCHANGE_JWT_SECRET);
+  const token = JSON.parse(otherIp.body).accessToken;
   const audit = await ctx.server.route(makeEvent({ path: '/api/admin/audit', headers: bearer(token) }));
   const rows = JSON.parse(audit.body).rows;
-  assert.ok(rows.some((row) => row.action === 'auth.locked'), 'the lockout is audited');
-  assert.ok(rows.filter((row) => row.action === 'admin.login.failed').length >= 4, 'failures are audited');
+  assert.ok(!rows.some((row) => row.action === 'auth.locked'), 'account lockout is gone');
+  assert.ok(rows.filter((row) => row.action === 'admin.login.failed').length >= 5, 'failures are audited');
 });
 
 // --------------------------------------------------------------- sessions
@@ -590,6 +593,12 @@ test('the account module changes email and password after verification', async (
     })
   );
   assert.equal(patch.statusCode, 200);
+  assert.equal(JSON.parse(patch.body).signedOut, true, 'password change clears the session');
+
+  const stale = await ctx.server.route(
+    makeEvent({ path: '/api/admin/exchange/stats', headers: bearer(token) })
+  );
+  assert.equal(stale.statusCode, 401, 'old access token fails authVersion check on exchange routes');
 
   const oldPw = await login(ctx, { password: PASS });
   assert.equal(oldPw.statusCode, 401, 'the old password stops working');

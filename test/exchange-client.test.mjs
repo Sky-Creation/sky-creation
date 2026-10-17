@@ -112,7 +112,7 @@ function makePanel(childrenBySelector) {
 
 /* ------------------------------------------------------------ exchange.js */
 
-function loadExchange({ search = '', guests = [], respondRoutes = {} } = {}) {
+function loadExchange({ search = '', hash = '', guests = [], respondRoutes = {} } = {}) {
   const calls = { fetch: [] };
   const statusEl = makeEl('p');
 
@@ -176,8 +176,19 @@ function loadExchange({ search = '', guests = [], respondRoutes = {} } = {}) {
   const storage = makeStorage();
   if (guests.length) storage.setItem('sky_exchange_guest_orders', JSON.stringify(guests));
 
+  const location = {
+    search,
+    hash,
+    pathname: '/orders',
+  };
+
   const fetchImpl = (url, opts) => {
-    calls.fetch.push({ url, method: (opts && opts.method) || 'GET', body: JSON.parse((opts && opts.body) || '{}') });
+    calls.fetch.push({
+      url,
+      method: (opts && opts.method) || 'GET',
+      body: opts && opts.body ? JSON.parse(opts.body) : undefined,
+      headers: (opts && opts.headers) || {},
+    });
     const route = respondRoutes[url] || { status: 200, body: {} };
     return Promise.resolve({
       ok: route.status < 400,
@@ -187,7 +198,19 @@ function loadExchange({ search = '', guests = [], respondRoutes = {} } = {}) {
   };
 
   const context = {
-    window: { location: { search }, localStorage: storage, SKY_EXCHANGE: null },
+    window: {
+      location,
+      history: {
+        replaceState(_a, _b, url) {
+          const parsed = new URL(url, 'https://skycreation.dev');
+          location.search = parsed.search;
+          location.hash = parsed.hash;
+          location.pathname = parsed.pathname;
+        },
+      },
+      localStorage: storage,
+      SKY_EXCHANGE: null,
+    },
     document: {
       readyState: 'complete',
       querySelector: (sel) => bySel[sel] || null,
@@ -198,6 +221,7 @@ function loadExchange({ search = '', guests = [], respondRoutes = {} } = {}) {
     },
     fetch: fetchImpl,
     URLSearchParams,
+    URL,
     console,
     setTimeout,
     clearTimeout,
@@ -240,6 +264,7 @@ test('exchange.js reports success only after the server answers with an order id
       },
     },
   });
+  await settle();
 
   assert.equal(createdPanel.hidden, true, 'nothing is shown as created before the send');
   submit({ preventDefault() {} });
@@ -259,13 +284,33 @@ test('exchange.js reports success only after the server answers with an order id
 });
 
 test('exchange.js refuses an order below the minimum without fetching', async () => {
-  const { submit, calls, statusEl, form, settle } = loadExchange({});
+  const { submit, calls, statusEl, form, settle } = loadExchange({
+    respondRoutes: { '/api/exchange/rates': RATES_RESPONSE },
+  });
+  await settle();
   form.elements.amount.value = '50';
   submit({ preventDefault() {} });
   await settle();
 
   assert.equal(calls.fetch.filter((c) => c.url === '/api/exchange/orders').length, 0);
   assert.equal(statusEl.attrs['data-state'], 'error');
+});
+
+test('exchange.js refuses orders while the exchange is closed', async () => {
+  const { submit, calls, statusEl, settle } = loadExchange({
+    respondRoutes: {
+      '/api/exchange/rates': {
+        status: 200,
+        body: { ...RATES_RESPONSE.body, open: false },
+      },
+    },
+  });
+  await settle();
+  submit({ preventDefault() {} });
+  await settle();
+
+  assert.equal(calls.fetch.filter((c) => c.url === '/api/exchange/orders').length, 0);
+  assert.match(statusEl.textContent, /closed/i);
 });
 
 test('exchange.js disables the honeypot control at load', async () => {
@@ -280,7 +325,7 @@ test('exchange.js renders the guest order list from the resolver', async () => {
       '/api/exchange/rates': RATES_RESPONSE,
       '/api/exchange/orders/list': {
         status: 200,
-        body: { orders: [{ id: 'order-1', reference: 'SC-1', status: 'PENDING', isRedacted: true, amount: 5000, receiveAmount: 642500, createdAt: '2026-10-10T00:00:00.000Z' }] },
+        body: { orders: [{ id: 'order-1', reference: 'SC-1', status: 'PENDING', isRedacted: true, createdAt: '2026-10-10T00:00:00.000Z' }] },
       },
     },
   });
@@ -288,21 +333,27 @@ test('exchange.js renders the guest order list from the resolver', async () => {
 
   assert.ok(guestList.children.length >= 1, 'a card was rendered for the remembered order');
   assert.ok(subtreeText(guestList).includes('SC-1'), 'the reference appears on the card');
+  assert.ok(subtreeText(guestList).includes('Private details'), 'redacted cards hide amounts');
 });
 
 test('exchange.js shows a detail panel for a tracked order', async () => {
-  const { orderDetail, settle } = loadExchange({
-    search: `?id=order-1&token=${'ab'.repeat(24)}`,
+  const token = 'ab'.repeat(24);
+  const { orderDetail, calls, settle } = loadExchange({
+    search: '?id=order-1',
+    hash: `#token=${token}`,
     respondRoutes: {
       '/api/exchange/rates': RATES_RESPONSE,
-      '/api/exchange/orders/list': {
+      '/api/exchange/orders/order-1': {
         status: 200,
-        body: { orders: [{ id: 'order-1', reference: 'SC-1', status: 'PENDING', isRedacted: false, senderName: 'Aung Ko', senderContact: '+95012345678', amount: 5000, receiveAmount: 642500, rateUsed: 128.5, createdAt: '2026-10-10T00:00:00.000Z', hasProof: false }] },
+        body: { id: 'order-1', reference: 'SC-1', status: 'PENDING', isRedacted: false, senderName: 'Aung Ko', senderContact: '+95012345678', amount: 5000, receiveAmount: 642500, rateUsed: 128.5, direction: 'THB_TO_MMK', createdAt: '2026-10-10T00:00:00.000Z', hasProof: false },
       },
     },
   });
   await settle();
 
+  const detail = calls.fetch.find((c) => c.url === '/api/exchange/orders/order-1');
+  assert.ok(detail, 'detail is fetched by id');
+  assert.equal(detail.headers['X-View-Token'], token);
   assert.ok(orderDetail.children.length > 0, 'the panel is populated for a known order');
   assert.ok(subtreeText(orderDetail).includes('SC-1'));
 });
@@ -310,13 +361,15 @@ test('exchange.js shows a detail panel for a tracked order', async () => {
 test('exchange.js detail panel labels a MMK->THB order in its own units', async () => {
   // rateUsed is stored per-direction (THB per MMK here), so the label must not
   // hard-code "1 THB = X MMK": that misread MMK buys as THB sends.
+  const token = 'cd'.repeat(24);
   const { orderDetail, settle } = loadExchange({
-    search: `?id=mmk-order&token=${'cd'.repeat(24)}`,
+    search: '?id=mmk-order',
+    hash: `#token=${token}`,
     respondRoutes: {
       '/api/exchange/rates': RATES_RESPONSE,
-      '/api/exchange/orders/list': {
+      '/api/exchange/orders/mmk-order': {
         status: 200,
-        body: { orders: [{ id: 'mmk-order', reference: 'SC-9', status: 'PENDING', direction: 'MMK_TO_THB', isRedacted: false, amount: 10000, receiveAmount: 77.82, rateUsed: 0.0078, createdAt: '2026-10-10T00:00:00.000Z', hasProof: false }] },
+        body: { id: 'mmk-order', reference: 'SC-9', status: 'PENDING', direction: 'MMK_TO_THB', isRedacted: false, amount: 10000, receiveAmount: 77.82, rateUsed: 0.0078, createdAt: '2026-10-10T00:00:00.000Z', hasProof: false },
       },
     },
   });
@@ -375,7 +428,7 @@ test('exchange.js keeps a stale guest order visible without a token', async () =
       '/api/exchange/rates': RATES_RESPONSE,
       '/api/exchange/orders/list': {
         status: 200,
-        body: { orders: [{ id: 'other-1', reference: 'SC-2', status: 'PENDING', isRedacted: true, amount: 5000, receiveAmount: 642500, createdAt: '2026-10-10T00:00:00.000Z' }] },
+        body: { orders: [{ id: 'other-1', reference: 'SC-2', status: 'PENDING', isRedacted: true, createdAt: '2026-10-10T00:00:00.000Z' }] },
       },
     },
   });

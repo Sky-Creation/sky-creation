@@ -23,11 +23,11 @@ operational one: what the traps are and what not to undo.
 - **Exchange app:** Netlify Function → Netlify Blobs, no external mail service
 - **DNS:** Spaceship, monitored nightly by GitHub Actions
 
-Vanilla HTML/CSS/JS. No framework, no bundler. The root `package.json` exists
-for exactly one reason: the `@netlify/blobs` dependency that the exchange
-function (and only the exchange function) imports. It is not a signal that a
-build step may be added. Do not add further dependencies or tooling without
-asking.
+Vanilla HTML/CSS/JS. No framework, no bundler. The root `package.json` holds
+the function runtime deps only: `@netlify/blobs` (exchange/admin stores) and
+`@upstash/redis` + `@upstash/ratelimit` (shared rate limiting). It is not a
+signal that a build step may be added. Do not add further dependencies or
+tooling without asking.
 
 ### Current state
 
@@ -50,9 +50,10 @@ functions/                Netlify Functions -> Brevo, exchange storefront, site-
     auth.mjs              scryptHash + verifyStoredHash + HMAC JWTs + refresh session cookie; sellars: signAccessToken, verifyAccessToken, createRefreshSession, rotateRefreshSession
     orders.mjs            Shared storefront + admin core: createOrderStore({store, proofs, auditStore, env}); storefront AND admin both call it
     http.mjs              httpError / ok / fail / parseJsonBody / bearerToken
-package.json              Sole dep @netlify/blobs (needed by store.mjs only)
+    rate-limit.mjs        Shared Upstash (prod) / memory (test) rate limiter + HMAC IP hashing
+package.json              Function deps: @netlify/blobs, @upstash/redis, @upstash/ratelimit
 docs/                     Guides + build history. Start at docs/README.md; AGENTS.md stays the authoritative rules
-test/                     Node tests. NOT under site/, never published (103)
+test/                     Node tests. NOT under site/, never published (105)
   main.test.mjs           Contact form + posts rendering, client side
   contact.test.mjs        Contact form, server side
   exchange.test.mjs       Exchange storefront, server side
@@ -102,7 +103,7 @@ actually happened: `/test/*.test.mjs` and `/functions/contact.mjs` served 200 on
 
 ```sh
 # Tests - CI runs exactly these
-node --test test/*.test.mjs             # 103 tests (14 main + 14 contact + 25 exchange server + 9 exchange client + 28 admin server + 10 admin client + 3 seed)
+node --test test/*.test.mjs             # 105 tests (14 main + 14 contact + 26 exchange server + 10 exchange client + 28 admin server + 10 admin client + 3 seed)
 python3 -m unittest discover -s infra   # 48 tests
 
 # Deploy happens automatically on every push to main (both sites; deploy.yml).
@@ -236,30 +237,34 @@ rules:
   `httpError(...)` while async leaks a rejected promise past the try/catch; the
   tests were written with this bug live and every route failed on the first run.
   If you see a bare `payload()` call without `await` in a dispatch, it is broken.
-- **Tests must run without `npm install`.** CI never installs `@netlify/blobs`.
-  All network paths are behind the lazy blob `Store` which `SKY_EXCHANGE_TEST`
-  replaces with `InMemoryStore` (`store.mjs`). Do not import `@netlify/blobs` at
-  module top level or call the real store anywhere the tests touch.
+- **Tests must run without `npm install`.** CI never installs `@netlify/blobs`
+  or Upstash. Blob paths are behind the lazy `Store` which `SKY_EXCHANGE_TEST`
+  replaces with `InMemoryStore` (`store.mjs`). Rate limiting uses an injected
+  memory limiter under the same flag. Do not import `@netlify/blobs` or
+  `@upstash/*` at module top level on paths the tests touch (Upstash is
+  dynamic-imported inside `createProductionRateLimiter` only).
 - **Never show "converted"/"ordered" without a server answer.** Same rule as the
   contact form, and the same trap: a client-side fill-time gate is worse than
   nothing because bots see the same pages. The honeypot (`company`) is the only
   success-without-persistence path, and its discards are logged deliberately.
-- **Order details are redacted unless the caller holds the per-order viewToken.**
-  A guest can always see that an order exists (id, status, timestamps) but the
-  amounts, email and proof only resolve with the 48-hex token. The neighbour's
-  obvious id must not leak your amounts. The one deliberate exception: the
-  **authenticated** admin listing (`adminOrdersPage`) maps every row through
-  `fullOrder`, so the panel can show who sent the order, the destination account
-  and the note. Storefront listings stay `publicOrder`-redacted.
+- **Order details are redacted unless the caller holds the per-order viewToken
+  via the `X-View-Token` header.** Query/body tokens are ignored. A guest can
+  always see that an order exists (id, status, timestamps) but amounts and
+  parties only resolve with the 48-hex header token. Storefront `listOrders`
+  never lifts redaction. The one deliberate exception: the **authenticated**
+  admin listing (`adminOrdersPage`) maps every row through `fullOrder`.
 - **Data lives in Netlify Blobs** (`SCI_EXCHANGE_ORDERS`, `SCI_EXCHANGE_PROOFS`,
   plus `SCI_ADMIN` for the panel account/posts/settings/audit).
   Deleting a blob store is irreversible loss of the order history. Treat it like
   `rm -rf`.
-- **Rate limits and JWTs** mirror sci-exchange: 10 order creates / 10 admin
-  logins per IP per 10 minutes; 15-minute HMAC access token, httpOnly refresh
-  cookie rotated on use, alg:none and forged signatures rejected (an empty
-  signature must throw `TokenError`, never a `RangeError` — `timingSafeEqual`
-  throws on length mismatch; the length guard in `auth.mjs` exists for that).
+- **Rate limits and JWTs:** shared Upstash sliding windows — 10 order creates /
+  IP / 10 min, 5 admin logins / IP / 15 min, 5 contact / IP / 10 min — with
+  `RATE_LIMIT_HMAC_KEY` hashing identifiers; missing config fails closed (503).
+  Access JWT is 15 minutes with `authVersion`; httpOnly refresh cookie rotates
+  on use; password change bumps `authVersion` and clears sessions. `alg:none`
+  and forged signatures rejected (an empty signature must throw `TokenError`,
+  never a `RangeError` — `timingSafeEqual` throws on length mismatch; the
+  length guard in `auth.mjs` exists for that). There is **no account lockout**.
 - **The admin API is same-origin too.** `/api/admin/*` is rewritten by
   `netlify.toml` and `admin.html` uses no CORS. Do not "fix" it to require
   `Access-Control-Allow-Origin`; a REST client (Postman, curl) does not need
@@ -267,16 +272,13 @@ rules:
   verified server-side (scrypt, against the seeded `user:primary` row);
   `EXCHANGE_ADMIN_PASSWORD` is only an input to the seed script, never read at
   runtime and never in client source. The `/api/posts` route is public (no
-  auth) and lives in the admin function.
-- **Worker-side login lockout:** 5 failed logins freeze the account for 15
-  minutes (403, audited as `auth.locked`); a wrong identifier and a wrong
-  password answer identically (401), and the response on the fifth failure is
-  the lockout itself.
+  auth) and lives in the admin function. Wrong identifier and wrong password
+  answer identically (401).
 - **`event.path` vs Netlify rewrites:** the function receives a rewritten path
   from `/api/exchange/*` and `/api/admin/*`. Routing uses `event.path` but a
-  static `__exchange_path` fallback when the path is already resolved. With
-  query strings, the token is read from `queryStringParameters`, not the path.
-  The rewrite behaviour is worth a live check after each deploy (see §8).
+  static `__exchange_path` fallback when the path is already resolved. View
+  tokens are read from the `X-View-Token` header only, never from the query
+  string. The rewrite behaviour is worth a live check after each deploy (see §8).
 - **Blobs reads are text unless you ask for a type, and v1 handlers are not
   auto-configured.** Two live bugs, both invisible to the 99 in-memory tests:
   1. `@netlify/blobs` `get()` returns JSON **text** unless given
@@ -380,6 +382,9 @@ Custom domain `founder.skycreation.dev` is attached; Spacehip `founder` CNAME mu
 | `EXCHANGE_JWT_SECRET` | **required** for admin login; random high-entropy string |
 | `EXCHANGE_ADMIN_PASSWORD` | **no longer read at runtime.** Feed it to `scripts/seed-admin.mjs` once per fresh `SCI_ADMIN` store (the seeded row holds the scrypt hash) |
 | `EXCHANGE_RATE_DEFAULT` | optional; first-day THB→MMK rate (default 128.5) |
+| `RATE_LIMIT_HMAC_KEY` | **required** in production (≥ 32 chars); hashes IPs before Upstash |
+| `UPSTASH_REDIS_REST_URL` | **required** in production (shared rate limiter) |
+| `UPSTASH_REDIS_REST_TOKEN` | **required** in production |
 
 Blob store: **`SCI_ADMIN`** holds the admin user (`user:primary`), refresh
 sessions, posts (`post:company:*`, `post:math:*`), settings (`setting:*`) and
@@ -445,8 +450,9 @@ been confirmed to appear in logs. Worth checking in the Netlify dashboard.
 
 ## 8. Verified state at handoff
 
-- 103 Node tests, 48 Python tests passing (the admin split is home; posts are
-  now read from `/api/posts` with `assets/posts.js` as fallback)
+- 105 Node tests, 48 Python tests passing (the admin split is home; posts are
+  now read from `/api/posts` with `assets/posts.js` as fallback; rate limits
+  and view tokens use the hardened model in §4)
 - Site-wide admin panel live on `skycreation.dev`: seeded login (200 + JWT),
   `/api/posts` → `{"company":[],"math":[]}`, admin order list full (`senderName`,
   `isRedacted:false`) while the guest list stays redacted, delete works, CSP

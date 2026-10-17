@@ -89,6 +89,9 @@ The founder site is static and needs none of them.
 | `EXCHANGE_JWT_SECRET` | random high-entropy string; signs admin tokens |
 | `EXCHANGE_ADMIN_PASSWORD` | input to `scripts/seed-admin.mjs` only; not read at runtime |
 | `EXCHANGE_RATE_DEFAULT` | optional first-day THB→MMK rate (defaults to 128.5) |
+| `RATE_LIMIT_HMAC_KEY` | ≥ 32 chars; required for contact / exchange / admin rate limits |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (shared rate limiter) |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 
 Via the API, the account endpoint takes the site as a query parameter and the
 body as an array of `{key, values}` objects:

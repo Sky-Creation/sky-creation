@@ -1,9 +1,8 @@
 /* Site-wide admin panel (site/admin.html) for skycreation.dev.
  *
  * Backed by functions/admin.mjs behind /api/admin/*. Login is username or
- * email + password; the panel holds a 15-minute HMAC access token in
- * localStorage (never the refresh cookie - that is httpOnly, rotated by the
- * refresh endpoint) and refreshes it in the background every 10 minutes while
+ * email + password; the panel holds a 15-minute HMAC access token in memory.
+ * The httpOnly refresh cookie rotates it on reload and every 10 minutes while
  * the dashboard is open.
  *
  * Modules: Dashboard, Exchange (orders + rates), Posts, Settings, Audit log,
@@ -16,7 +15,7 @@
 (function () {
   'use strict';
 
-  var TOKEN_KEY = 'sky_admin_token';
+  var accessToken = null;
   var refreshTimer = null;
   var currentTab = 'dashboard';
 
@@ -67,13 +66,10 @@
   }
 
   function getToken() {
-    try { return window.localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
+    return accessToken;
   }
   function storeToken(token) {
-    try {
-      if (token) window.localStorage.setItem(TOKEN_KEY, token);
-      else window.localStorage.removeItem(TOKEN_KEY);
-    } catch (e) {}
+    accessToken = token || null;
   }
 
   /* Authenticated JSON request. 401 means the session is gone: drop the token
@@ -155,6 +151,7 @@
           storeToken(result.body.accessToken);
           setStatus('', null);
           showDashboard();
+          startRefreshLoop();
         })
         .catch(function (err) {
           setStatus(err.message || 'Sign in failed.', 'error');
@@ -504,6 +501,8 @@
       var form = document.createElement('form');
       form.className = 'admin-rate-form';
       var rateField = field('New THB \u2192 MMK rate', 'number', 'rate');
+      rateField.input.min = '50';
+      rateField.input.max = '500';
       form.appendChild(rateField.wrap);
 
       var openWrap = document.createElement('label');
@@ -529,8 +528,16 @@
       form.addEventListener('submit', function (event) {
         event.preventDefault();
         var body = { open: openCheck.checked };
-        var val = parseFloat(rateField.input.value);
-        if (isFinite(val) && val > 0) body.thbToMmk = val;
+        var raw = String(rateField.input.value || '').trim();
+        if (raw) {
+          var val = parseFloat(raw);
+          if (!isFinite(val) || val < 50 || val > 500) {
+            status.textContent = 'Rate must be between 50 and 500.';
+            status.setAttribute('data-state', 'error');
+            return;
+          }
+          body.thbToMmk = val;
+        }
         save.disabled = true;
         status.textContent = 'Saving...';
         status.setAttribute('data-state', 'pending');
@@ -797,6 +804,8 @@
       form.className = 'admin-rate-form';
 
       var seedField = field('Default seed rate (used if the live rate is missing)', 'number', 'defaultRate');
+      seedField.input.min = '50';
+      seedField.input.max = '500';
       if (s.defaultRate) seedField.input.value = String(s.defaultRate);
       form.appendChild(seedField.wrap);
 
@@ -823,7 +832,12 @@
         event.preventDefault();
         var body = { open: openCheck.checked };
         var val = parseFloat(seedField.input.value);
-        if (isFinite(val) && val > 0) body.defaultRate = val;
+        if (seedField.input.value && (!isFinite(val) || val < 50 || val > 500)) {
+          status.textContent = 'Default rate must be between 50 and 500.';
+          status.setAttribute('data-state', 'error');
+          return;
+        }
+        if (isFinite(val)) body.defaultRate = val;
         save.disabled = true;
         status.textContent = 'Saving...';
         status.setAttribute('data-state', 'pending');
@@ -932,6 +946,11 @@
             if (!res.ok) {
               status.textContent = (res.body && res.body.error) || 'Could not update';
               status.setAttribute('data-state', 'error');
+            } else if (res.body && res.body.signedOut) {
+              storeToken(null);
+              clearInterval(refreshTimer);
+              refreshTimer = null;
+              showLogin('Password changed. Sign in with your new password.');
             } else {
               status.textContent = 'Account updated.';
               status.setAttribute('data-state', 'success');
@@ -1029,18 +1048,17 @@
     wireLogin();
     wireLogout();
     wireTabs();
-    if (getToken()) {
-      apiAdmin('/api/admin/session', { method: 'GET' }).then(function (result) {
-        if (result.ok) {
-          showDashboard();
-          startRefreshLoop();
-        } else {
-          showLogin();
-        }
-      });
-    } else {
-      showLogin();
-    }
+    // The access token is intentionally never persisted. A page reload asks
+    // the httpOnly refresh cookie for a fresh token before loading the panel.
+    apiAdmin('/api/admin/refresh', { method: 'POST', body: '{}' }).then(function (result) {
+      if (result.ok && result.body && result.body.accessToken) {
+        storeToken(result.body.accessToken);
+        showDashboard();
+        startRefreshLoop();
+      } else {
+        showLogin();
+      }
+    });
   }
 
   if (document.readyState === 'loading') {

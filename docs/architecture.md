@@ -93,8 +93,8 @@ Netlify Blobs
 
 The rewrites are declared in `netlify.toml`. Routing inside a function uses
 `event.path`, with a static `__exchange_path` query fallback for the case where
-the path is already resolved. With a query string the view token is read from
-`queryStringParameters`, not the path.
+the path is already resolved. View tokens are accepted **only** via the
+`X-View-Token` header (query/body tokens are ignored).
 
 Because both API trees are rewritten to same-origin function URLs, the page
 JavaScript uses no CORS. Do not "fix" the API to send
@@ -139,16 +139,16 @@ consistency window. See [`exchange.md`](exchange.md) and [`testing.md`](testing.
 
 ## Security model at a glance
 
-- **Contact form**: honeypot field `company` (hidden), per-IP rate limit, body
-  and field caps. A success response is only returned when a send was attempted.
-- **Exchange storefront**: order details are redacted unless the caller holds
-  the per-order 48-hex `viewToken`. A guest can always see that an order exists
-  (id, status, timestamps) but not the amounts, email or proof. The one
-  deliberate exception is the authenticated admin listing, which uses
-  `fullOrder`.
+- **Contact form**: honeypot field `company` (hidden), shared Upstash per-IP
+  rate limit (5 / 10 min), body and field caps. A success response is only
+  returned when a send was attempted (or the honeypot discarded).
+- **Exchange storefront**: `publicOrder` is status-only; amounts lift only with
+  `X-View-Token`. List never unredacts. Order create is rate-limited
+  (10 / 10 min). Proof upload requires the header token and `PENDING` status.
 - **Admin**: scrypt-hashed password (seeded `user:primary` row), 15-minute HMAC
-  access token, httpOnly refresh cookie rotated on use, 5-failure/15-minute
-  lockout, `alg:none` and forged signatures rejected.
+  access token with `authVersion` (in memory), httpOnly refresh cookie rotated
+  on use, 5 login attempts / IP / 15 min (no account lockout), `alg:none` and
+  forged signatures rejected.
 - **Headers/CSP** (company site, `netlify.toml`): `X-Frame-Options: DENY`,
   `X-Content-Type-Options: nosniff`, HSTS, a `default-src 'self'` CSP, and
   `img-src` that includes `blob:` (proof previews) and `data:`. HTML revalidates

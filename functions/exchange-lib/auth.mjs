@@ -79,10 +79,10 @@ export async function verifyStoredHash(attempt, saltHex, hashHex) {
   }
 }
 
-export function signAccessToken({ sub, role }, secret, ttlSeconds = ACCESS_TTL_SECONDS) {
+export function signAccessToken({ sub, role, authVersion = 0 }, secret, ttlSeconds = ACCESS_TTL_SECONDS) {
   const header = { alg: 'HS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
-  const payload = { sub, role, type: 'access', iat: now, exp: now + ttlSeconds };
+  const payload = { sub, role, authVersion, type: 'access', iat: now, exp: now + ttlSeconds };
   const signingInput = `${base64Url(JSON.stringify(header))}.${base64Url(JSON.stringify(payload))}`;
   const signature = createHmac('sha256', secret).update(signingInput).digest();
   return `${signingInput}.${base64Url(signature)}`;
@@ -145,7 +145,11 @@ export function verifyAccessToken(token, secret, { role = 'ADMIN' } = {}) {
   if (typeof payload.exp !== 'number' || payload.exp <= now) {
     throw new TokenError('token is expired', 'expired');
   }
-  if (typeof payload.sub !== 'string' || typeof payload.iat !== 'number') {
+  if (
+    typeof payload.sub !== 'string' ||
+    typeof payload.iat !== 'number' ||
+    (payload.authVersion !== undefined && (!Number.isInteger(payload.authVersion) || payload.authVersion < 0))
+  ) {
     throw new TokenError('token is malformed', 'malformed');
   }
   return payload;
@@ -153,28 +157,36 @@ export function verifyAccessToken(token, secret, { role = 'ADMIN' } = {}) {
 
 const randomId = () => randomBytes(32).toString('hex');
 
-export async function createRefreshSession(store, sub, ttlSeconds = REFRESH_TTL_SECONDS) {
+export async function createRefreshSession(store, sub, authVersion = 0, ttlSeconds = REFRESH_TTL_SECONDS) {
   const jti = randomId();
   const now = Date.now();
-  await store.set(`session:${jti}`, { sub, createdAt: now, exp: now + ttlSeconds * 1000 });
+  await store.set(`session:${jti}`, { sub, authVersion, createdAt: now, exp: now + ttlSeconds * 1000 });
   return jti;
 }
 
 /* Validate and consume a refresh session, rotating it so a stolen cookie stops
  * working once used. Returns { jti, sub, cookie } on success. */
-export async function rotateRefreshSession(store, jti, sub, ttlSeconds = REFRESH_TTL_SECONDS) {
+export async function rotateRefreshSession(store, jti, sub, authVersion = 0, ttlSeconds = REFRESH_TTL_SECONDS) {
   if (!jti || !/^[0-9a-f]{64}$/.test(jti)) return null;
   const record = await store.get(`session:${jti}`);
-  if (!record || record.exp < Date.now()) return null;
+  if (!record || record.exp < Date.now() || record.sub !== sub || (record.authVersion || 0) !== authVersion) return null;
   const old = record;
   await store.delete(`session:${jti}`);
-  const next = await createRefreshSession(store, sub, ttlSeconds);
+  const next = await createRefreshSession(store, sub, authVersion, ttlSeconds);
   return { previousJti: jti, jti: next, sub: old.sub };
 }
 
 export async function deleteRefreshSession(store, jti) {
   if (!jti || !/^[0-9a-f]{64}$/.test(jti)) return;
   await store.delete(`session:${jti}`);
+}
+
+export async function deleteAllRefreshSessions(store, sub) {
+  const entries = await store.list({ prefix: 'session:' });
+  for (const entry of entries) {
+    const session = await store.get(entry.key);
+    if (session && session.sub === sub) await store.delete(entry.key);
+  }
 }
 
 export function refreshCookie(jti, ttlSeconds = REFRESH_TTL_SECONDS) {

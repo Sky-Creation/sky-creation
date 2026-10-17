@@ -4,6 +4,8 @@
   "description": "Static site + Netlify Functions for skycreation.dev.",
   "type": "module",
   "dependencies": {
-    "@netlify/blobs": "^8.2.0"
+    "@netlify/blobs": "^8.2.0",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.39.0"
   }
 }

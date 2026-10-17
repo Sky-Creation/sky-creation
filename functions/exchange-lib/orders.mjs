@@ -27,6 +27,7 @@ import {
   parseRateInput,
   ORDER_STATUSES,
   isFiniteNumber,
+  isValidThbToMmkRate,
 } from './validate.mjs';
 
 export const MINIMUMS = { THB: 100, MMK: 10000 };
@@ -104,14 +105,20 @@ export function createOrderStore({ store, proofs: _proofs, auditStore, env = {} 
 
   async function getRate() {
     let current = await readJson(store, 'rate:current');
-    if (!current || !isFiniteNumber(current.thbToMmk) || current.thbToMmk <= 0) {
+    if (current === null) {
       // The admin Settings screen can record a default seed rate; the env
       // variable and the built-in constant are the fallbacks in that order.
       const configured = await readJson(store, 'setting:defaultRate');
+      if (configured !== null && !isValidThbToMmkRate(configured)) {
+        throw httpError(503, 'The configured default rate is invalid');
+      }
+      const environmentRate = Number(getEnv('EXCHANGE_RATE_DEFAULT'));
       const seed =
-        isFiniteNumber(configured) && configured > 0
+        isValidThbToMmkRate(configured)
           ? configured
-          : Number(getEnv('EXCHANGE_RATE_DEFAULT')) || DEFAULT_RATE;
+          : isValidThbToMmkRate(environmentRate)
+            ? environmentRate
+            : DEFAULT_RATE;
       current = {
         thbToMmk: seed,
         mmkToThb: round4(1 / seed),
@@ -126,9 +133,14 @@ export function createOrderStore({ store, proofs: _proofs, auditStore, env = {} 
         actor: 'system',
       });
     }
+    if (!current || !isValidThbToMmkRate(current.thbToMmk)) {
+      // A persisted invalid rate is a data-integrity fault. Do not overwrite it
+      // with a guess and risk issuing a quote at the wrong rate.
+      throw httpError(503, 'The current exchange rate is unavailable');
+    }
     return {
       ...current,
-      mmkToThb: isFiniteNumber(current.mmkToThb)
+      mmkToThb: isFiniteNumber(current.mmkToThb) && current.mmkToThb > 0
         ? current.mmkToThb
         : round4(1 / current.thbToMmk),
     };
@@ -149,14 +161,6 @@ export function createOrderStore({ store, proofs: _proofs, auditStore, env = {} 
       id: order.id,
       reference: order.reference,
       status: order.status,
-      direction: order.direction,
-      amount: order.amount,
-      receiveAmount: order.receiveAmount,
-      rateUsed: order.rateUsed,
-      method: order.method,
-      level: order.level,
-      fee: order.fee,
-      hasProof: Boolean(order.proofAt),
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       completedAt: order.completedAt || null,
@@ -168,6 +172,14 @@ export function createOrderStore({ store, proofs: _proofs, auditStore, env = {} 
     return {
       ...publicOrder(order),
       isRedacted: false,
+      direction: order.direction,
+      amount: order.amount,
+      receiveAmount: order.receiveAmount,
+      rateUsed: order.rateUsed,
+      method: order.method,
+      level: order.level,
+      fee: order.fee,
+      hasProof: Boolean(order.proofAt),
       senderName: order.senderName,
       senderContact: order.senderContact,
       accountNo: order.accountNo || '',
@@ -340,7 +352,7 @@ export function createOrderStore({ store, proofs: _proofs, auditStore, env = {} 
         ...next,
         actor: 'admin',
       });
-      await audit('rate.updated', { thbToMmk: next.thbToMmk }, actor);
+      await audit('rate.updated', { source: 'admin' }, actor);
       result.thbToMmk = next.thbToMmk;
       result.mmkToThb = next.mmkToThb;
     }

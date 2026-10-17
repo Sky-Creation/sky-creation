@@ -17,7 +17,7 @@ separate function — see [`exchange.md`](exchange.md). Both call the shared
   `ADMIN`; the seeded row id is `primary`.
 
 The account lives in the `SCI_ADMIN` blob store under `user:primary` as a row
-with `saltHex` + `hashHex` (scrypt) and lockout bookkeeping. **The password is
+with `saltHex` + `hashHex` (scrypt) and `authVersion`. **The password is
 never stored in plaintext and is never read from an environment variable at
 runtime.** `EXCHANGE_ADMIN_PASSWORD` is only an input to the seed script.
 
@@ -28,7 +28,8 @@ node scripts/seed-admin.mjs --password <pw>
 netlify blobs:set SCI_ADMIN user:primary --input seed-admin-out.json
 ```
 
-See [`runbook.md`](runbook.md) for recovery.
+After a reseed, delete existing `session:*` keys (or bump `authVersion`) so old
+refresh cookies stop minting access tokens. See [`runbook.md`](runbook.md).
 
 ## Routes
 
@@ -42,7 +43,7 @@ All under `functions/admin.mjs`, rewritten from `/api/admin/*`, plus the public
 | `POST` | `/api/admin/login` | `{identifier, password}` → access token + refresh cookie |
 | `POST` | `/api/admin/logout` | deletes the refresh session, clears the cookie |
 | `POST` | `/api/admin/refresh` | rotates the refresh session, returns a new access token |
-| `GET` | `/api/admin/session` | who am I (requires a valid access token) |
+| `GET` | `/api/admin/session` | who am I (requires a valid access token + matching `authVersion`) |
 
 ### Modules
 
@@ -63,6 +64,9 @@ All under `functions/admin.mjs`, rewritten from `/api/admin/*`, plus the public
 | `PATCH` | `/api/admin/account` | change username/email/name/password |
 | `GET` | `/api/posts` | **public**, both lists (no auth) |
 
+Authenticated module handlers use `requireUser` (JWT + `authVersion` match),
+not bare signature checks.
+
 ### Legacy aliases
 
 Pre-module paths kept working for older clients: `GET /api/admin/stats`,
@@ -74,24 +78,27 @@ Pre-module paths kept working for older clients: `GET /api/admin/stats`,
 Implemented in `functions/exchange-lib/auth.mjs`; configured by
 `EXCHANGE_JWT_SECRET` (missing → `503 Admin auth is not configured`).
 
-- **Access token** — HS256 JWT, 15 minutes, `{sub, role:'ADMIN'}`, sent as a
-  `Bearer` token. `verifyAccessToken` rejects `alg:none` and forged signatures;
-  a wrong role is `403`, any other token error is `401`.
+- **Access token** — HS256 JWT, 15 minutes, `{sub, role:'ADMIN', authVersion}`,
+  held **in memory** by the panel (never localStorage). Sent as `Bearer`.
+  `verifyAccessToken` rejects `alg:none` and forged signatures; a wrong role is
+  `403`, any other token error is `401`. A mismatched `authVersion` is `401`.
 - **Refresh cookie** — `httpOnly`, 7 days, `Path=/api/admin`, holding a session
-  jti stored in `SCI_ADMIN` under `session:<id>`. `refresh` **rotates** it; a
-  replayed old session is rejected (`401`), and sessions self-expire.
+  jti stored in `SCI_ADMIN` under `session:<id>` with the same `authVersion`.
+  `refresh` **rotates** it; a replayed old session is rejected (`401`), and
+  sessions self-expire. Page load boots via `POST /api/admin/refresh`.
 - **Wrong identifier vs wrong password** answer identically (`401`).
-- **Lockout** — 5 failed logins freeze the account for 15 minutes (`403`,
-  audited as `auth.locked`); the fifth failure's response *is* the lockout.
-- **Rate limit** — 10 login attempts per IP per 10 minutes (`429`), held in
-  memory like the order-create limiter: **per warm instance**, so across the
-  fleet the effective limit is approximate (a live burst proved this: 16
-  post-limit attempts on one IP, no `429`; the invariant is unit-tested).
+- **No account lockout.** Per-IP login limit is **5 / 15 minutes** via shared
+  Upstash (`admin-login` namespace) → `429` + `Retry-After`. A third party
+  cannot freeze the only administrator out globally.
+- **Password change** bumps `authVersion`, deletes all refresh sessions, clears
+  the cookie and returns `{ signedOut: true }`.
 - **Timing-safe compare** — `timingSafeEqual` throws on a length mismatch, so
   `auth.mjs` guards lengths first; an empty signature must throw `TokenError`,
   never a `RangeError`.
 
-Login, logout, failed attempts and lockouts are all audited.
+Login, logout and failed attempts are audited (`admin.login`,
+`admin.login.failed`, `admin.logout`). Identifier and IP are stored as HMAC
+hashes, not plaintext.
 
 ## Posts
 
@@ -108,15 +115,16 @@ working API is authoritative.
 ## Settings
 
 - `open` — toggles the exchange; applied through `ratesApply()` so it audits as
-  `exchange.state`.
+  `exchange.state`. The rates form may POST `{ open }` alone (empty rate field).
 - `defaultRate` — stored at `setting:defaultRate`; the seed value `getRate()`
   uses when `rate:current` is unset (audited as `settings.defaultRate`).
+  Valid band 50–500.
 
 ## The redaction exception
 
 `adminOrdersPage` maps every row through `fullOrder` — this is the one place the
 full order (sender name/contact, destination account, note) is served without a
-per-order token, and it is gated by `requireAdmin`. The storefront listing stays
+per-order token, and it is gated by `requireUser`. The storefront listing stays
 `publicOrder`-redacted. Do not "unify" these; the asymmetry is the point. See
 [`exchange.md`](exchange.md).
 
@@ -125,8 +133,7 @@ per-order token, and it is gated by `requireAdmin`. The storefront listing stays
 `SCI_ADMIN` (user, sessions, audit, posts, settings) plus the exchange stores
 via the shared core. Treat `SCI_ADMIN` like the order store: deleting it loses
 the panel account and the audit history, and the seed command is the recovery
-path. The admin function's own header comment still names `SCI_PROOFS`; the
-actual store opened by `store.mjs` is `SCI_EXCHANGE_PROOFS`.
+path.
 
 ## Same-origin by design
 
@@ -134,9 +141,16 @@ actual store opened by `store.mjs` is `SCI_EXCHANGE_PROOFS`.
 `Access-Control-Allow-Origin` — a REST client does not need CORS, and a
 same-origin password panel does not use it.
 
+## Environment
+
+| Variable | Role |
+| --- | --- |
+| `EXCHANGE_JWT_SECRET` | **required** for access/refresh tokens |
+| `RATE_LIMIT_HMAC_KEY` | **required** in production (≥ 32 chars) |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | **required** in production |
+| `SKY_EXCHANGE_TEST=1` | in-memory stores + memory limiter (tests only) |
+
 ## Tests
 
 Server: `test/admin.test.mjs` (seeded scrypt user; login, sessions, modules,
-audit). Client: `test/admin-client.test.mjs` (VM fake DOM). The server tests
-inject an `InMemoryStore`, so no environment variable is needed. See
-[`testing.md`](testing.md).
+audit). Client: `test/admin-client.test.mjs` (VM fake DOM; boots via refresh).

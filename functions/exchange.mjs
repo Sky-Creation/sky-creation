@@ -13,19 +13,23 @@
  *   POST /api/exchange/orders
  *   POST /api/exchange/orders/list
  *   GET  /api/exchange/orders/:id
- *   POST /api/exchange/orders/:id/proof          JSON { token, mimeType, dataBase64 }
- *   GET  /api/exchange/orders/:id/proof?token=
+ *   POST /api/exchange/orders/:id/proof          X-View-Token + JSON image body
+ *   GET  /api/exchange/orders/:id/proof          X-View-Token
  *
  * Environment:
  *   EXCHANGE_RATE_DEFAULT     optional seed THB->MMK rate (default 128.5)
- *   SKY_EXCHANGE_TEST=1       use in-memory stores (tests only)
+ *   RATE_LIMIT_HMAC_KEY       required in production (>= 32 chars)
+ *   UPSTASH_REDIS_REST_URL    required in production (shared rate limiter)
+ *   UPSTASH_REDIS_REST_TOKEN  required in production
+ *   SKY_EXCHANGE_TEST=1       use in-memory stores + memory limiter (tests only)
  *
  * Security notes:
  *   - every amount is validated with Number.isFinite (JSON.parse("1e309")
  *     yields Infinity), positive and bounded;
  *   - recognised prototype-pollution keys are rejected before use;
  *   - order details are redacted publicly unless the caller holds the per-order
- *     viewToken; tokens are 48 hex chars and are returned to the creator once;
+ *     viewToken via the X-View-Token header; tokens are 48 hex chars and are
+ *     returned to the creator once;
  *   - the honeypot field ("company") is the only success-without-persistence
  *     path, matching the contact form.
  */
@@ -40,6 +44,7 @@ import {
   parseProofInput,
   assertSafeKeys,
   MAX_ORDER_AMOUNT,
+  ValidationError,
 } from './exchange-lib/validate.mjs';
 import { json, ok, fail, httpError, clientIp, pathOf } from './exchange-lib/http.mjs';
 import {
@@ -50,34 +55,23 @@ import {
   quote,
   MINIMUMS,
 } from './exchange-lib/orders.mjs';
+import {
+  createMemoryRateLimiter,
+  createProductionRateLimiter,
+  enforceRateLimit,
+  resolveRateLimitHmacKey,
+  RateLimiterError,
+} from './exchange-lib/rate-limit.mjs';
 
 export { InMemoryStore } from './exchange-lib/store.mjs';
 
 const LEVELS = ['Standard', 'Express', 'VIP'].map((id) => ({ id, name: id }));
 
-function makeLimiter(max, windowMs) {
-  const hits = new Map();
-  return function limit(ip) {
-    const now = Date.now();
-    const recent = (hits.get(ip) || []).filter((t) => now - t < windowMs);
-    if (recent.length >= max) {
-      hits.set(ip, recent);
-      return true;
-    }
-    recent.push(now);
-    hits.set(ip, recent);
-    if (hits.size > 5000) {
-      for (const [key, times] of hits) {
-        if (times.every((t) => now - t >= windowMs)) hits.delete(key);
-      }
-    }
-    return false;
-  };
-}
+let productionLimiterPromise;
 
 /* ----------------------------------------------------------------- server */
 
-export function createServer({ store, proofs, admin, env = {} } = {}) {
+export function createServer({ store, proofs, admin, env = {}, limiter, limiterFactory } = {}) {
   // admin stores the unified audit log in production; tests that predate the
   // split still get a store they can assert against.
   const svc = createOrderStore({
@@ -86,8 +80,26 @@ export function createServer({ store, proofs, admin, env = {} } = {}) {
     auditStore: admin || store,
     env,
   });
+  const getEnv = (name) => {
+    const override = env[name];
+    return override !== undefined ? override : process.env[name];
+  };
 
-  const limitOrderCreate = makeLimiter(10, 10 * 60 * 1000);
+  // Injected limiter / no factory = in-process test path; production always
+  // passes limiterFactory and requires RATE_LIMIT_HMAC_KEY.
+  const allowTestDefault =
+    Boolean(limiter) || !limiterFactory || String(getEnv('SKY_EXCHANGE_TEST') || '') === '1';
+  const rateLimitKey = resolveRateLimitHmacKey(
+    { RATE_LIMIT_HMAC_KEY: getEnv('RATE_LIMIT_HMAC_KEY') },
+    { allowTestDefault },
+  );
+
+  let orderLimiter = limiter || (limiterFactory ? null : createMemoryRateLimiter());
+
+  async function getOrderLimiter() {
+    if (limiterFactory && !orderLimiter) orderLimiter = await limiterFactory();
+    return orderLimiter;
+  }
 
   /* ------------------------------------------------------------ public API */
 
@@ -133,9 +145,14 @@ export function createServer({ store, proofs, admin, env = {} } = {}) {
   }
 
   async function createOrder(event) {
-    if (limitOrderCreate(clientIp(event))) {
-      return json(429, { ok: true, discarded: true, error: 'rate limited' });
-    }
+    await enforceRateLimit({
+      limiter: await getOrderLimiter(),
+      namespace: 'exchange-order-create',
+      ip: clientIp(event),
+      max: 10,
+      windowSeconds: 10 * 60,
+      hmacKey: rateLimitKey,
+    });
 
     const body = parseJsonBody(event);
     assertSafeKeys(body, 'body');
@@ -186,7 +203,7 @@ export function createServer({ store, proofs, admin, env = {} } = {}) {
     };
 
     await svc.writeOrder(order);
-    await svc.audit('order.created', { id, reference: order.reference, direction: order.direction, amount: order.amount });
+    await svc.audit('order.created', { id, reference: order.reference, direction: order.direction });
 
     return ok({
       ok: true,
@@ -214,16 +231,16 @@ export function createServer({ store, proofs, admin, env = {} } = {}) {
         continue;
       }
       const order = await svc.readOrder(entry.id);
-      const token = typeof entry.viewToken === 'string' ? entry.viewToken : '';
-      orders.push(await svc.viewOrder(order, token));
+      // The list route intentionally does not accept view tokens. It is used
+      // for a guest's local history, which only needs status-only cards.
+      orders.push(await svc.viewOrder(order, ''));
     }
     return ok({ orders });
   }
 
   async function getOrder(event, id) {
     const order = await svc.readOrder(id);
-    const q = event.queryStringParameters || {};
-    const token = q.token || cleanText(event.headers?.['x-view-token'] || '', 200);
+    const token = cleanText(event.headers?.['x-view-token'] || '', 200);
     if (!order) throw httpError(404, 'Order not found');
     const view = await svc.viewOrder(order, token);
     if (!view) throw httpError(404, 'Order not found');
@@ -233,11 +250,15 @@ export function createServer({ store, proofs, admin, env = {} } = {}) {
   async function uploadProof(event, id) {
     const order = await svc.readOrder(id);
     if (!order) throw httpError(404, 'Order not found');
-    const body = parseJsonBody(event, 8 * 1024 * 1024);
-    const { token, mimeType, fileName, buffer } = parseProofInput(body);
+    const token = cleanText(event.headers?.['x-view-token'] || '', 200);
     if (!order.viewToken || token !== order.viewToken) {
       throw httpError(404, 'Order not found');
     }
+    if (order.status !== 'PENDING') {
+      throw httpError(400, 'Proof can only be uploaded while the order is pending');
+    }
+    const body = parseJsonBody(event, 8 * 1024 * 1024);
+    const { mimeType, fileName, buffer } = parseProofInput(body);
 
     await writeBinary(proofs, `proof:${id}`, buffer);
     await store.set(`proof:meta:${id}`, {
@@ -258,8 +279,7 @@ export function createServer({ store, proofs, admin, env = {} } = {}) {
   async function viewProof(event, id) {
     const order = await svc.readOrder(id);
     if (!order) throw httpError(404, 'Order not found');
-    const q = event.queryStringParameters || {};
-    const token = q.token || cleanText(event.headers?.['x-view-token'] || '', 200);
+    const token = cleanText(event.headers?.['x-view-token'] || '', 200);
     if (!order.viewToken || token !== order.viewToken) {
       throw httpError(404, 'Order not found');
     }
@@ -314,13 +334,16 @@ export function createServer({ store, proofs, admin, env = {} } = {}) {
 
       throw httpError(404, 'Not found');
     } catch (err) {
+      if (err instanceof RateLimiterError) {
+        const headers = err.retryAfter ? { 'Retry-After': String(err.retryAfter) } : undefined;
+        return fail(err.status, err.message, headers);
+      }
       if (err && err.status) return fail(err.status, err.message);
       if (err && err.code === 'TOO_LARGE') return fail(413, 'Request too large');
-      if (err instanceof Error) {
-        // Expected client-side input errors surface here; anything else is a bug.
+      if (err instanceof ValidationError || (err && ['INVALID_JSON', 'INVALID_BODY', 'UNSAFE_KEYS', 'INVALID_INPUT'].includes(err.code))) {
         return fail(400, err.message);
       }
-      console.error('exchange: unhandled error', err);
+      console.error('exchange: unhandled error', err && err.stack ? err.stack : err);
       return fail(500, 'Server error');
     }
   }
@@ -329,7 +352,26 @@ export function createServer({ store, proofs, admin, env = {} } = {}) {
 }
 
 export const handler = async (event) => {
-  const { store, proofs, admin } = await openStores(event);
-  const server = createServer({ store, proofs, admin });
-  return server.route(event);
+  try {
+    const { store, proofs, admin } = await openStores(event);
+    const testMode = process.env.SKY_EXCHANGE_TEST === '1';
+    if (!testMode) {
+      productionLimiterPromise = productionLimiterPromise || createProductionRateLimiter(process.env);
+    }
+    const server = createServer({
+      store,
+      proofs,
+      admin,
+      env: process.env,
+      limiter: testMode ? createMemoryRateLimiter() : undefined,
+      limiterFactory: testMode ? undefined : () => productionLimiterPromise,
+    });
+    return await server.route(event);
+  } catch (err) {
+    if (err instanceof RateLimiterError) {
+      return fail(err.status, err.message);
+    }
+    console.error('exchange: unavailable', err && err.message ? err.message : err);
+    return fail(503, 'Service temporarily unavailable');
+  }
 };

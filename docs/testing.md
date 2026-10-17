@@ -9,7 +9,7 @@ panel, the contact form, the DNS parsers or the seed script.
 ## Commands (exactly what CI runs)
 
 ```sh
-# Node — 103 tests
+# Node — 105 tests
 node --test test/*.test.mjs
 
 # Python — 48 tests
@@ -83,13 +83,18 @@ If you change behaviour, these are the assertions you must keep true:
    honeypot is the *only* success-without-sending path.
 2. **Same rule for the exchange**: "converted"/"ordered" only after a server
    answer; the `company` honeypot is the only success-without-persistence path.
-3. **Redaction**: storefront listings are `publicOrder` unless the caller holds
-   the per-order token; only `adminOrdersPage` maps through `fullOrder`.
+3. **Redaction**: storefront `listOrders` is always status-only `publicOrder`;
+   detail lifts only with the `X-View-Token` header; only `adminOrdersPage`
+   maps through `fullOrder`.
 4. **Tokens**: `alg:none` and forged signatures are rejected; an empty signature
    must throw `TokenError`, never a `RangeError` (the length guard in `auth.mjs`
-   exists because `timingSafeEqual` throws on a length mismatch).
+   exists because `timingSafeEqual` throws on a length mismatch). Access JWTs
+   carry `authVersion`; password change invalidates them.
 5. **Validation**: non-finite amounts, oversized fields, control characters and
    prototype-pollution keys are all rejected (`validate.mjs`).
+6. **Rate limits**: 429 responses are `{ error }` with `Retry-After`; tests use
+   the memory limiter (`SKY_EXCHANGE_TEST=1` or an injected limiter), never
+   live Upstash.
 
 ## Adding a test
 
@@ -97,7 +102,8 @@ If you change behaviour, these are the assertions you must keep true:
   a new file; the glob picks it up automatically.
 - Keep everything runnable without `npm install`. If your test touches a path
   that would hit the network or the real store, inject an `InMemoryStore` (or
-  guard it behind `SKY_EXCHANGE_TEST=1`).
+  guard it behind `SKY_EXCHANGE_TEST=1`). Upstash packages are production-only
+  dynamic imports.
 - Test the invariants above, not the implementation. The suites were written
   with the real bugs live; that is why they are specific.
 

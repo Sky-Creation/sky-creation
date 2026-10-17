@@ -19,6 +19,8 @@
   var LIST_URL = '/api/exchange/orders/list';
   var GUEST_KEY = 'sky_exchange_guest_orders';
   var FALLBACK_RATE = 128.5;
+  // Mirror functions/exchange-lib/validate.mjs MAX_ORDER_AMOUNT.
+  var MAX_ORDER_AMOUNT = 1e9;
 
   var state = {
     rates: null,
@@ -118,14 +120,36 @@
     return state.rates.thbToMmk;
   }
 
+  function setOrderFormOpen(isOpen) {
+    var form = $('#order-form');
+    if (!form) return;
+    var submit = form.querySelector('button[type="submit"]');
+    var status = form.querySelector('.form-status');
+    if (submit) submit.disabled = !isOpen;
+    if (!isOpen && status && status.getAttribute('data-state') !== 'success') {
+      status.textContent = 'The exchange is currently closed. Orders cannot be placed right now.';
+      status.setAttribute('data-state', 'error');
+    }
+    if (isOpen && status && status.getAttribute('data-state') === 'error' &&
+        status.textContent.indexOf('currently closed') !== -1) {
+      status.textContent = '';
+      status.removeAttribute('data-state');
+    }
+  }
+
   function applyRates(data) {
     state.rates = data;
-    state.offline = false;
+    state.offline = Boolean(data && data.source === 'offline');
 
     var pill = $('#calc-status');
     if (pill) {
-      pill.textContent = data.open ? 'Live Rate' : 'Exchange Closed';
-      pill.setAttribute('data-state', data.open ? 'live' : 'closed');
+      if (state.offline) {
+        pill.textContent = 'Offline Rate';
+        pill.setAttribute('data-state', 'offline');
+      } else {
+        pill.textContent = data.open ? 'Live Rate' : 'Exchange Closed';
+        pill.setAttribute('data-state', data.open ? 'live' : 'closed');
+      }
     }
 
     var display = $('#calc-rate-display');
@@ -159,6 +183,9 @@
         levels.appendChild(option);
       });
     }
+
+    // Offline fallback is not orderable: no live channels/levels and no open flag.
+    setOrderFormOpen(Boolean(data.open) && !state.offline);
   }
 
   function loadRates() {
@@ -176,14 +203,8 @@
   }
 
   function enterOffline() {
-    state.offline = true;
-    var pill = $('#calc-status');
-    if (pill) {
-      pill.textContent = 'Offline Rate';
-      pill.setAttribute('data-state', 'offline');
-    }
     applyRates({
-      open: true,
+      open: false,
       thbToMmk: Number((window.localStorage && window.localStorage.getItem('SCI_DEFAULT_RATE')) || FALLBACK_RATE),
       mmkToThb: FALLBACK_RATE ? 1 / FALLBACK_RATE : 0,
       updatedAt: null,
@@ -354,13 +375,20 @@
         else status.removeAttribute('data-state');
       }
 
+      if (state.offline || (state.rates && state.rates.open === false)) {
+        return setStatus('The exchange is currently closed. Orders cannot be placed right now.', 'error');
+      }
       if (!isFinite(data.amount) || data.amount <= 0) return setStatus('Enter an amount to exchange.', 'error');
+      if (data.amount > MAX_ORDER_AMOUNT) {
+        return setStatus('Amount is too large.', 'error');
+      }
       var minimums = (state.rates && state.rates.minimums) || { THB: 100, MMK: 10000 };
       var min = data.direction === 'THB_TO_MMK' ? minimums.THB : minimums.MMK;
       if (!isFinite(data.amount) || data.amount < min) {
         return setStatus('Minimum amount is ' + fmt(min) + ' for this direction.', 'error');
       }
       if (!data.method) return setStatus('Choose how you will pay.', 'error');
+      if (!data.level) return setStatus('Choose a service level.', 'error');
       if (!data.senderName || !data.senderContact) {
         return setStatus('Your name and contact are required so we can confirm the transfer.', 'error');
       }
@@ -409,7 +437,7 @@
     panel.querySelector('[data-rate]').textContent = rateSummary(body.rateUsed, body.direction);
 
     var track = panel.querySelector('[data-track]');
-    var href = '/orders?id=' + encodeURIComponent(body.orderId) + '&token=' + encodeURIComponent(body.viewToken);
+    var href = '/orders?id=' + encodeURIComponent(body.orderId) + '#token=' + encodeURIComponent(body.viewToken);
     track.setAttribute('href', href);
 
     var copy = panel.querySelector('[data-copy-link]');
@@ -498,9 +526,11 @@
 
     var line = document.createElement('p');
     line.className = 'ex-order-card-line';
-    line.textContent = fmt(order.amount) + ' ' + directionOf(order.direction) +
-      ' \u2192 ' + fmt(order.receiveAmount) + ' ' + receiveOf(order.direction) +
-      (order.rateUsed ? ' @ ' + rateSummary(order.rateUsed, order.direction) : '');
+    line.textContent = order.isRedacted
+      ? 'Private details are available from your tracking link.'
+      : fmt(order.amount) + ' ' + directionOf(order.direction) +
+        ' \u2192 ' + fmt(order.receiveAmount) + ' ' + receiveOf(order.direction) +
+        (order.rateUsed ? ' @ ' + rateSummary(order.rateUsed, order.direction) : '');
     card.appendChild(line);
 
     var meta = document.createElement('p');
@@ -540,7 +570,7 @@
     api(LIST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orders: guests })
+        body: JSON.stringify({ orders: guests.map(function (guest) { return { id: guest.id }; }) })
     }).then(function (result) {
       if (!result.ok || !Array.isArray(result.body.orders)) {
         renderEmptyOrders();
@@ -550,11 +580,8 @@
       result.body.orders.forEach(function (order) {
         if (!order) return;
         var guest = guests.find(function (g) { return g.id === order.id; });
-        // The server asked us to list an order the guest no longer has a token
-        // for (stale link, cleared localStorage). Show it without a token rather
-        // than collapsing the whole list on a TypeError.
         var anchor = '/orders?id=' + encodeURIComponent(order.id) +
-          (guest && guest.viewToken ? '&token=' + encodeURIComponent(guest.viewToken) : '');
+          (guest && guest.viewToken ? '#token=' + encodeURIComponent(guest.viewToken) : '');
         renderOrderCard(order, anchor);
         rendered += 1;
       });
@@ -564,23 +591,34 @@
     });
   }
 
+  function trackingTokenFromLocation() {
+    var params = new URLSearchParams(window.location.search || '');
+    var legacy = params.get('token');
+    var fragment = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    var token = fragment.get('token') || legacy || '';
+    if (legacy && window.history && window.history.replaceState) {
+      params.delete('token');
+      var query = params.toString();
+      window.history.replaceState(null, '', (window.location.pathname || '/orders') + (query ? '?' + query : '') + '#token=' + encodeURIComponent(legacy));
+    }
+    return token;
+  }
+
   function wireOrderDetail() {
     var panel = $('#order-detail');
     if (!panel) return;
     var params = new URLSearchParams(window.location.search);
     var id = params.get('id');
-    var token = params.get('token');
-    if (!id || !token) {
+    var token = trackingTokenFromLocation();
+    if (!id) {
       panel.hidden = true;
       return;
     }
 
-    api(LIST_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orders: [{ id: id, viewToken: token }] })
+    api(ORDERS_URL + '/' + encodeURIComponent(id), {
+      headers: token ? { 'X-View-Token': token } : {}
     }).then(function (result) {
-      var order = result.ok && result.body.orders && result.body.orders[0];
+      var order = result.ok && result.body;
       if (!order) {
         panel.textContent = 'We could not find that order. Check the link or contact us.';
         return;
@@ -604,12 +642,14 @@
     head.appendChild(statusBadge(order.status));
     panel.appendChild(head);
 
-    var amount = document.createElement('p');
-    amount.className = 'ex-order-card-line';
-    amount.textContent = fmt(order.amount) + ' ' + directionOf(order.direction) +
-      ' \u2192 ' + fmt(order.receiveAmount) + ' ' + receiveOf(order.direction) +
-      ' @ ' + rateSummary(order.rateUsed, order.direction);
-    panel.appendChild(amount);
+    if (!order.isRedacted) {
+      var amount = document.createElement('p');
+      amount.className = 'ex-order-card-line';
+      amount.textContent = fmt(order.amount) + ' ' + directionOf(order.direction) +
+        ' \u2192 ' + fmt(order.receiveAmount) + ' ' + receiveOf(order.direction) +
+        ' @ ' + rateSummary(order.rateUsed, order.direction);
+      panel.appendChild(amount);
+    }
 
     var timeline = document.createElement('div');
     timeline.className = 'ex-timeline';
@@ -637,6 +677,8 @@
       panel.appendChild(details);
     }
 
+    if (order.isRedacted || !token) return;
+
     var proofBox = document.createElement('div');
     proofBox.className = 'ex-proof';
     var proofTitle = document.createElement('h3');
@@ -648,7 +690,7 @@
       img.className = 'ex-proof-img';
       img.alt = 'Proof of payment';
       img.hidden = true;
-      fetch(ORDERS_URL + '/' + encodeURIComponent(order.id) + '/proof?token=' + encodeURIComponent(token))
+      fetch(ORDERS_URL + '/' + encodeURIComponent(order.id) + '/proof', { headers: { 'X-View-Token': token } })
         .then(function (resp) {
           if (!resp.ok) throw new Error('nope');
           return resp.blob();
@@ -688,10 +730,9 @@
         status.textContent = 'Uploading...';
         compressImage(file)
           .then(function (payload) {
-            payload.token = token;
             return api(ORDERS_URL + '/' + encodeURIComponent(order.id) + '/proof', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'X-View-Token': token },
               body: JSON.stringify(payload)
             });
           })

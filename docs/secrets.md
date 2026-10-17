@@ -20,6 +20,9 @@ secrets, or an untracked local file.
 | `EXCHANGE_JWT_SECRET` | Netlify env (company) | admin access/refresh tokens | required for admin login |
 | `EXCHANGE_ADMIN_PASSWORD` | not read at runtime | input to `scripts/seed-admin.mjs` | see "Admin password" |
 | `EXCHANGE_RATE_DEFAULT` | Netlify env (company) | exchange seed rate | optional; not a secret |
+| `RATE_LIMIT_HMAC_KEY` | Netlify env (company) | contact / exchange / admin rate limits | required; ≥ 32 chars |
+| `UPSTASH_REDIS_REST_URL` | Netlify env (company) | shared Upstash rate limiter | required in production |
+| `UPSTASH_REDIS_REST_TOKEN` | Netlify env (company) | shared Upstash rate limiter | required in production |
 | `NETLIFY_AUTH_TOKEN` | GitHub Actions secret | `deploy.yml` | deploys both sites |
 | `SPACESHIP_API_KEY` | GitHub Actions secret | `dns-watch.yml` | read-only DNS cross-check |
 | `SPACESHIP_API_SECRET` | GitHub Actions secret | `dns-watch.yml` | read-only DNS cross-check |
@@ -87,8 +90,10 @@ The password is not an env value at runtime. Two ways to change it:
 - **From the panel:** `/admin` → Account → set a new password (requires the
   current one; audited as `account.updated`).
 - **By reseeding:** `node scripts/seed-admin.mjs --password <newpw>` then
-  `netlify blobs:set SCI_ADMIN user:primary --input seed-admin-out.json`. This
-  also resets the lockout state; the old password stops working immediately.
+  `netlify blobs:set SCI_ADMIN user:primary --input seed-admin-out.json`.
+  Then delete existing `session:*` keys (or bump `authVersion` on the user
+  row) so old refresh cookies stop working. The old password stops verifying
+  immediately once the new hash is written.
 
 ### Spaceship API key
 

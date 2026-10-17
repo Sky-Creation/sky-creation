@@ -2,14 +2,13 @@
  *
  * The script is a plain IIFE with no export, so it is evaluated against a
  * hand-built DOM (login view, admin view, six panels, tab buttons) inside a
- * Node vm, with a fake localStorage and a scriptable fetch. The same
- * approach as exchange-client.test.mjs, just a bigger surface.
+ * Node vm with a scriptable fetch. The access token lives in memory; boot
+ * asks POST /api/admin/refresh (httpOnly cookie) for a fresh token.
  *
  * The invariants that matter client-side:
- *   - a login only "succeeds" after the server answers (no timing gate, no
- *     local success); the honeypot is server-side and out of scope here.
- *   - the access token lives in localStorage, is sent as a Bearer header, and
- *     a 401 anywhere drops it and returns to the login screen.
+ *   - a login only "succeeds" after the server answers (no timing gate);
+ *   - the access token is held in memory, sent as a Bearer header, and a 401
+ *     anywhere drops it and returns to the login screen;
  *   - destructive actions (order delete) go through a confirm panel before any
  *     request is made.
  *
@@ -138,7 +137,6 @@ const ORDER = {
 };
 
 function build() {
-  // --- DOM ---------------------------------------------------------------
   const doc = {
     readyState: 'complete',
     body: makeEl('body'),
@@ -183,25 +181,23 @@ function build() {
   doc.querySelectorAll = (sel) => (sel === '[data-admin-tab]' ? tabs.slice() : []);
   doc.getElementById = (id) => (selectorMap['#' + id] || null);
 
-  // --- storage -----------------------------------------------------------
-  const data = new Map();
-  const localStorage = {
-    getItem: (k) => (data.has(k) ? data.get(k) : null),
-    setItem: (k, v) => data.set(k, String(v)),
-    removeItem: (k) => data.delete(k),
-  };
-
-  return { doc, loginView, adminView, loginForm, loginSubmit, loginStatus, logoutBtn, tabs, panels, localStorage };
+  return { doc, loginView, adminView, loginForm, loginSubmit, loginStatus, logoutBtn, tabs, panels };
 }
 
-function loadAdmin({ token = null, routes = {} } = {}) {
-  const { doc, loginView, adminView, loginForm, loginSubmit, loginStatus, logoutBtn, tabs, panels, localStorage } = build();
-  const make = makeFetch(routes);
-  make.routes = routes;
-  if (token) localStorage.setItem('sky_admin_token', token);
+function loadAdmin({ bootToken = null, routes = {} } = {}) {
+  const { doc, loginView, adminView, loginForm, loginSubmit, loginStatus, logoutBtn, tabs, panels } = build();
+  const merged = {
+    '/api/admin/refresh': () => (
+      bootToken
+        ? respond({ ok: true, accessToken: bootToken, role: 'ADMIN', expiresInSeconds: 900 })
+        : { status: 401, body: { error: 'No refresh session' } }
+    ),
+    ...routes,
+  };
+  const make = makeFetch(merged);
 
   const context = {
-    window: { localStorage },
+    window: {},
     document: doc,
     fetch: make.fetchImpl,
     console,
@@ -248,15 +244,15 @@ function loadAdmin({ token = null, routes = {} } = {}) {
     logoutBtn,
     tabs,
     panels,
-    localStorage,
   };
 }
 
-test('with no stored token the login screen is shown and nothing is fetched', () => {
+test('with no refresh session the login screen is shown', async () => {
   const app = loadAdmin();
+  await app.settle();
   assert.equal(app.loginView.hidden, false, 'login view is visible');
   assert.equal(app.adminView.hidden, true, 'admin view stays hidden');
-  assert.equal(app.calls.length, 0, 'no session probe runs without a token');
+  assert.ok(app.calls.some((c) => c.url === '/api/admin/refresh'), 'boot probes refresh');
 });
 
 test('a failed login shows the server error and keeps the session absent', async () => {
@@ -265,6 +261,7 @@ test('a failed login shows the server error and keeps the session absent', async
       '/api/admin/login': () => ({ status: 401, body: { error: 'Check your password.' } }),
     },
   });
+  await app.settle();
 
   app.loginForm.elements.identifier.value = 'admin';
   app.loginForm.elements.password.value = 'wrong';
@@ -273,16 +270,16 @@ test('a failed login shows the server error and keeps the session absent', async
 
   assert.match(app.loginStatus.textContent, /password/i);
   assert.equal(app.loginView.hidden, false, 'still on the login screen');
-  assert.equal(app.localStorage.getItem('sky_admin_token'), null, 'no token stored');
 });
 
-test('a successful login stores the token, opens the dashboard and sends it as Bearer', async () => {
+test('a successful login opens the dashboard and sends the token as Bearer', async () => {
   const app = loadAdmin({
     routes: {
-      '/api/admin/login': () => respond({ accessToken: 'tok-123', role: 'manager' }),
+      '/api/admin/login': () => respond({ accessToken: 'tok-123', role: 'ADMIN' }),
       '/api/admin/dashboard': () => respond(DASHBOARD_BODY),
     },
   });
+  await app.settle();
 
   app.loginForm.elements.identifier.value = 'admin';
   app.loginForm.elements.password.value = 'hunter2';
@@ -290,7 +287,6 @@ test('a successful login stores the token, opens the dashboard and sends it as B
   await app.settle();
   await app.settle();
 
-  assert.equal(app.localStorage.getItem('sky_admin_token'), 'tok-123');
   assert.equal(app.loginView.hidden, true);
   assert.equal(app.adminView.hidden, false);
 
@@ -303,11 +299,10 @@ test('a successful login stores the token, opens the dashboard and sends it as B
   );
 });
 
-test('a valid stored token boots straight into the dashboard', async () => {
+test('a valid refresh cookie boots straight into the dashboard', async () => {
   const app = loadAdmin({
-    token: 'tok-keep',
+    bootToken: 'tok-keep',
     routes: {
-      '/api/admin/session': () => respond({ id: 'u1', username: 'admin', email: 'contact@skycreation.dev' }),
       '/api/admin/dashboard': () => respond(DASHBOARD_BODY),
     },
   });
@@ -321,42 +316,33 @@ test('a valid stored token boots straight into the dashboard', async () => {
   );
 });
 
-test('an expired stored token falls back to login and is dropped', async () => {
-  const app = loadAdmin({
-    token: 'expired',
-    routes: {
-      '/api/admin/session': () => ({ status: 401, body: { error: 'Session expired' } }),
-    },
-  });
+test('a failed refresh falls back to login', async () => {
+  const app = loadAdmin();
   await app.settle();
 
-  assert.equal(app.localStorage.getItem('sky_admin_token'), null, 'the dead token is removed');
   assert.equal(app.loginView.hidden, false);
   assert.equal(app.adminView.hidden, true);
 });
 
-test('a 401 during normal use drops the token and returns to login', async () => {
+test('a 401 during normal use returns to login', async () => {
   const app = loadAdmin({
-    token: 'tok-live',
+    bootToken: 'tok-live',
     routes: {
-      '/api/admin/session': () => respond({ id: 'u1', username: 'admin', email: 'contact@skycreation.dev' }),
       '/api/admin/dashboard': () => ({ status: 401, body: { error: 'Session expired' } }),
     },
   });
   await app.settle();
   await app.settle();
 
-  assert.equal(app.localStorage.getItem('sky_admin_token'), null);
   assert.equal(app.loginView.hidden, false);
   assert.equal(app.adminView.hidden, true);
   assert.match(app.loginStatus.textContent, /expired/i);
 });
 
-test('logout clears the token and shows the login view', async () => {
+test('logout clears the session and shows the login view', async () => {
   const app = loadAdmin({
-    token: 'tok-live',
+    bootToken: 'tok-live',
     routes: {
-      '/api/admin/session': () => respond({ id: 'u1' }),
       '/api/admin/dashboard': () => respond(DASHBOARD_BODY),
       '/api/admin/logout': () => respond({}),
     },
@@ -367,16 +353,14 @@ test('logout clears the token and shows the login view', async () => {
   app.click(app.logoutBtn);
   await app.settle();
 
-  assert.equal(app.localStorage.getItem('sky_admin_token'), null);
   assert.equal(app.loginView.hidden, false);
   assert.equal(app.adminView.hidden, true);
 });
 
 test('the exchange module lists orders from the API', async () => {
   const app = loadAdmin({
-    token: 'tok-1',
+    bootToken: 'tok-1',
     routes: {
-      '/api/admin/session': () => respond({ id: 'u1' }),
       '/api/admin/dashboard': () => respond(DASHBOARD_BODY),
       '/api/admin/exchange/orders?perPage=100': () => respond({ orders: [ORDER] }),
     },
@@ -406,9 +390,8 @@ test('the exchange module lists orders from the API', async () => {
 
 test('deleting an order asks for confirmation before any request', async () => {
   const app = loadAdmin({
-    token: 'tok-1',
+    bootToken: 'tok-1',
     routes: {
-      '/api/admin/session': () => respond({ id: 'u1' }),
       '/api/admin/dashboard': () => respond(DASHBOARD_BODY),
       '/api/admin/exchange/orders?perPage=100': () => respond({ orders: [ORDER] }),
     },
@@ -424,7 +407,11 @@ test('deleting an order asks for confirmation before any request', async () => {
 
   const overlay = app.doc.body.children.find((n) => n.className === 'modal-overlay');
   assert.ok(overlay, 'a confirm overlay is shown');
-  assert.equal(app.calls.length, 3, 'no delete request before confirmation');
+  assert.equal(
+    app.calls.filter((c) => c.url.includes('/o1/delete')).length,
+    0,
+    'no delete request before confirmation'
+  );
 
   const confirmBtn = app.all(overlay, (n) => n.tagName === 'BUTTON' && n.textContent === 'Confirm')[0];
   app.click(confirmBtn);
@@ -438,9 +425,8 @@ test('deleting an order asks for confirmation before any request', async () => {
 
 test('cancelling a delete sends nothing', async () => {
   const app = loadAdmin({
-    token: 'tok-1',
+    bootToken: 'tok-1',
     routes: {
-      '/api/admin/session': () => respond({ id: 'u1' }),
       '/api/admin/dashboard': () => respond(DASHBOARD_BODY),
       '/api/admin/exchange/orders?perPage=100': () => respond({ orders: [ORDER] }),
     },

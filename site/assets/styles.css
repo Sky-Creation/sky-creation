@@ -1869,6 +1869,33 @@ p:last-child {
   padding: 1.25rem;
 }
 
+/* --- company-page layout helpers (kept out of inline HTML for CSP) --- */
+
+.person-initials-cover { object-fit: cover; }
+
+.exchange-hero {
+  text-align: center;
+  padding-bottom: 2rem;
+  margin-inline: auto;
+  max-width: var(--max);
+}
+
+.exchange-lede { margin-inline: auto; max-width: 48ch; }
+.exchange-track-link { margin-top: 0.5rem; }
+.exchange-app-section { padding-top: 0; padding-bottom: 4rem; display: flex; justify-content: center; }
+.calc-status { margin-bottom: 0; }
+.calc-rate-display { font-weight: 700; color: var(--text); font-size: 0.9rem; }
+.rate-unit { font-weight: 700; color: #212529; }
+.fee-zero { color: #198754; }
+.converter-action { width: 100%; }
+.converter-contact { text-align: center; }
+.section-head-left { text-align: left; }
+.section-head-order { margin-bottom: 1rem; }
+.section-head-created { margin-bottom: 0.75rem; }
+.orders-hero { text-align: center; padding-bottom: 2rem; }
+.orders-lede { margin-inline: auto; max-width: 46ch; }
+.orders-section { padding-top: 0; padding-bottom: 4rem; }
+
 /* --- dark theme (admin and the rest of the site, opt-in by the OS) --- */
 
 

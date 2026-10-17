@@ -39,13 +39,17 @@
  *
  * Environment:
  *   EXCHANGE_JWT_SECRET       HMAC secret for access tokens (required)
- *   SKY_EXCHANGE_TEST=1       use in-memory stores (tests only)
+ *   RATE_LIMIT_HMAC_KEY       required in production (>= 32 chars)
+ *   UPSTASH_REDIS_REST_URL    required in production (shared rate limiter)
+ *   UPSTASH_REDIS_REST_TOKEN  required in production
+ *   SKY_EXCHANGE_TEST=1       use in-memory stores + memory limiter (tests only)
  *
  * Security:
  *   - username/email + password, scrypt hash + per-user salt, timing-safe;
  *   - wrong identifier and wrong password answer the same;
- *   - 5 failed logins lock the account for 15 minutes (audited);
- *   - 15-minute HMAC access token, 7-day rotating httpOnly refresh cookie;
+ *   - 5 login attempts / IP / 15 minutes via shared Upstash limiter (429);
+ *   - 15-minute HMAC access token (authVersion), 7-day rotating httpOnly refresh;
+ *   - password change bumps authVersion and clears refresh sessions;
  *   - every admin write is audited with the acting user's email.
  */
 
@@ -69,6 +73,7 @@ import {
   createRefreshSession,
   rotateRefreshSession,
   deleteRefreshSession,
+  deleteAllRefreshSessions,
   refreshCookie,
   clearRefreshCookie,
   readRefreshJti,
@@ -77,46 +82,49 @@ import {
 } from './exchange-lib/auth.mjs';
 import { ok, fail, httpError, clientIp, pathOf } from './exchange-lib/http.mjs';
 import { createOrderStore } from './exchange-lib/orders.mjs';
+import {
+  createMemoryRateLimiter,
+  createProductionRateLimiter,
+  enforceRateLimit,
+  hashRateLimitIdentifier,
+  resolveRateLimitHmacKey,
+  RateLimiterError,
+} from './exchange-lib/rate-limit.mjs';
+import { isValidThbToMmkRate, ValidationError } from './exchange-lib/validate.mjs';
 
 const USER_ID = 'primary';
 const USER_ROLE = 'ADMIN';
-const LOCK_ATTEMPTS = 5;
-const LOCK_MS = 15 * 60 * 1000;
 const MAX_IDENTIFIER = 200;
 const MAX_PASSWORD = 512;
 
-/* ------------------------------------------------------------------ utils */
-
-function makeLimiter(max, windowMs) {
-  const hits = new Map();
-  return function limit(ip) {
-    const now = Date.now();
-    const recent = (hits.get(ip) || []).filter((t) => now - t < windowMs);
-    if (recent.length >= max) {
-      hits.set(ip, recent);
-      return true;
-    }
-    recent.push(now);
-    hits.set(ip, recent);
-    if (hits.size > 5000) {
-      for (const [key, times] of hits) {
-        if (times.every((t) => now - t >= windowMs)) hits.delete(key);
-      }
-    }
-    return false;
-  };
-}
+let productionLimiterPromise;
 
 /* ----------------------------------------------------------------- server */
 
-export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
+export function createAdminServer({ store, proofs, admin, env = {}, limiter, limiterFactory } = {}) {
   const svc = createOrderStore({ store, proofs, auditStore: admin, env });
   const getEnv = (name) => {
     const override = env[name];
     return override !== undefined ? override : process.env[name];
   };
 
-  const limitLogin = makeLimiter(10, 10 * 60 * 1000);
+  const allowTestDefault =
+    Boolean(limiter) || !limiterFactory || String(getEnv('SKY_EXCHANGE_TEST') || '') === '1';
+  const rateLimitKey = resolveRateLimitHmacKey(
+    { RATE_LIMIT_HMAC_KEY: getEnv('RATE_LIMIT_HMAC_KEY') },
+    { allowTestDefault },
+  );
+
+  let loginLimiter = limiter || (limiterFactory ? null : createMemoryRateLimiter());
+
+  async function getLoginLimiter() {
+    if (limiterFactory && !loginLimiter) loginLimiter = await limiterFactory();
+    return loginLimiter;
+  }
+
+  function authVersionOf(row) {
+    return Number.isInteger(row && row.authVersion) && row.authVersion >= 0 ? row.authVersion : 0;
+  }
 
   // ------------------------------------------------------------ user store
 
@@ -132,6 +140,9 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
     const payload = requireAdmin(event);
     const row = await readUser();
     if (!row) throw httpError(503, 'Admin account is not configured');
+    if ((payload.authVersion || 0) !== authVersionOf(row)) {
+      throw httpError(401, 'Session is no longer valid');
+    }
     return { payload, row };
   }
 
@@ -163,9 +174,14 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
   }
 
   async function adminLogin(event) {
-    if (limitLogin(clientIp(event))) {
-      throw httpError(429, 'Too many attempts. Try again later.');
-    }
+    await enforceRateLimit({
+      limiter: await getLoginLimiter(),
+      namespace: 'admin-login',
+      ip: clientIp(event),
+      max: 5,
+      windowSeconds: 15 * 60,
+      hmacKey: rateLimitKey,
+    });
     const secret = secretKey();
     if (!secret) throw httpError(503, 'Admin auth is not configured');
     const row = await readUser();
@@ -178,11 +194,6 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
     const identifier = cleanText(body.identifier, MAX_IDENTIFIER);
     const password = typeof body.password === 'string' ? body.password.slice(0, MAX_PASSWORD) : '';
 
-    const now = Date.now();
-    if (row.lockedUntil && now < row.lockedUntil) {
-      throw httpError(403, 'Account temporarily locked. Try again later.');
-    }
-
     const identifierMatches =
       Boolean(identifier) &&
       (identifier.toLowerCase() === String(row.username || '').toLowerCase() ||
@@ -191,28 +202,23 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
     const okPassword = await verifyStoredHash(password, row.saltHex, row.hashHex);
 
     if (!identifierMatches || !okPassword) {
-      // Same response for a wrong identifier and a wrong password.
-      row.failedAttempts = (row.failedAttempts || 0) + 1;
-      if (row.failedAttempts >= LOCK_ATTEMPTS) {
-        row.failedAttempts = 0;
-        row.lockedUntil = now + LOCK_MS;
-        await writeUser(row);
-        await svc.audit('auth.locked', { identifier, reason: 'too many failures' }, identifier);
-        throw httpError(403, 'Account temporarily locked. Try again later.');
-      }
-      await writeUser(row);
-      await svc.audit('admin.login.failed', {}, identifier || '(empty)');
+      // Same response for a wrong identifier and a wrong password. The shared
+      // per-IP limit protects this endpoint without letting a third party lock
+      // the only administrator out globally.
+      await svc.audit('admin.login.failed', {
+        identifierHash: hashRateLimitIdentifier(identifier || '(empty)', rateLimitKey),
+        ipHash: hashRateLimitIdentifier(clientIp(event), rateLimitKey),
+      }, 'anonymous');
       throw httpError(401, 'Invalid credentials');
     }
 
-    row.failedAttempts = 0;
-    row.lockedUntil = null;
+    row.authVersion = authVersionOf(row);
     row.lastLoginAt = new Date().toISOString();
     await writeUser(row);
-    await svc.audit('admin.login', { ip: clientIp(event) }, row.email || row.username);
+    await svc.audit('admin.login', { ipHash: hashRateLimitIdentifier(clientIp(event), rateLimitKey) }, row.email || row.username);
 
-    const jti = await createRefreshSession(admin, row.id || USER_ID);
-    const accessToken = signAccessToken({ sub: row.id || USER_ID, role: USER_ROLE }, secret);
+    const jti = await createRefreshSession(admin, row.id || USER_ID, row.authVersion);
+    const accessToken = signAccessToken({ sub: row.id || USER_ID, role: USER_ROLE, authVersion: row.authVersion }, secret);
     return ok(
       { ok: true, accessToken, role: USER_ROLE, expiresInSeconds: 15 * 60 },
       { 'Set-Cookie': refreshCookie(jti) },
@@ -220,10 +226,15 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
   }
 
   async function adminLogout(event) {
-    const actor = await actorOf(event);
+    let actor = null;
+    try {
+      actor = await actorOf(event);
+    } catch (err) {
+      if (!err || (err.status !== 401 && err.status !== 403)) throw err;
+    }
     const jti = readRefreshJti(event);
     await deleteRefreshSession(admin, jti);
-    await svc.audit('admin.logout', {}, actor);
+    if (actor) await svc.audit('admin.logout', {}, actor);
     return ok({ ok: true }, { 'Set-Cookie': clearRefreshCookie() });
   }
 
@@ -232,9 +243,11 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
     if (!secret) throw httpError(503, 'Admin auth is not configured');
     const jti = readRefreshJti(event);
     if (!jti) throw httpError(401, 'No refresh session');
-    const rotated = await rotateRefreshSession(admin, jti, USER_ID);
-    if (!rotated) throw httpError(401, 'Refresh session is invalid or expired');
-    const accessToken = signAccessToken({ sub: rotated.sub, role: USER_ROLE }, secret);
+    const row = await readUser();
+    if (!row) throw httpError(503, 'Admin account is not configured');
+    const rotated = await rotateRefreshSession(admin, jti, row.id || USER_ID, authVersionOf(row));
+    if (!rotated) return fail(401, 'Refresh session is invalid or expired', { 'Set-Cookie': clearRefreshCookie() });
+    const accessToken = signAccessToken({ sub: rotated.sub, role: USER_ROLE, authVersion: authVersionOf(row) }, secret);
     return ok(
       { ok: true, accessToken, role: USER_ROLE, expiresInSeconds: 15 * 60 },
       { 'Set-Cookie': refreshCookie(rotated.jti) },
@@ -277,12 +290,12 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
   // ------------------------------------------------------------- exchange
 
   async function exchangeStats(event) {
-    await requireAdmin(event);
+    await requireUser(event);
     return ok(await svc.adminStats());
   }
 
   async function exchangeOrders(event) {
-    await requireAdmin(event);
+    await requireUser(event);
     const q = event.queryStringParameters || {};
     const status = q.status && ['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED'].includes(q.status) ? q.status : undefined;
     const page = parseInt(q.page || '1', 10);
@@ -291,21 +304,20 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
   }
 
   async function exchangeOrder(event, id) {
-    await requireAdmin(event);
+    await requireUser(event);
     const order = await svc.readOrder(id);
     if (!order) throw httpError(404, 'Order not found');
     return ok({ ...svc.fullOrder(order), viewToken: order.viewToken });
   }
 
   async function exchangeTransition(event, id, action) {
-    await requireAdmin(event);
     const actor = await actorOf(event);
     return ok(await svc.transition(id, action, actor));
   }
 
   async function exchangeRates(event) {
-    await requireAdmin(event);
     if (event.httpMethod === 'GET') {
+      await requireUser(event);
       return ok(await svc.ratesGet());
     }
     const actor = await actorOf(event);
@@ -336,13 +348,13 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
   }
 
   async function postsRead(event) {
-    await requireAdmin(event);
+    await requireUser(event);
     const [company, math] = await Promise.all([listPosts('company'), listPosts('math')]);
     return ok({ company, math });
   }
 
   async function postsCreate(event, list) {
-    await requireAdmin(event);
+    const actor = await actorOf(event);
     if (!POST_LISTS.has(list)) throw httpError(404, 'Unknown post list');
     const body = parseJsonBody(event);
     let input;
@@ -358,13 +370,12 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
       url: input.url,
       createdAt: new Date().toISOString(),
     });
-    const actor = await actorOf(event);
     await svc.audit('post.created', { list, id, date: input.date }, actor);
     return ok({ ok: true, id });
   }
 
   async function postsUpdate(event, list, id) {
-    await requireAdmin(event);
+    const actor = await actorOf(event);
     if (!POST_LISTS.has(list)) throw httpError(404, 'Unknown post list');
     if (!/^[0-9]+:[0-9a-f]+$/.test(id)) throw httpError(400, 'Invalid post id');
     const key = postKey(list, id);
@@ -384,20 +395,18 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
     });
-    const actor = await actorOf(event);
     await svc.audit('post.updated', { list, id, date: input.date }, actor);
     return ok({ ok: true });
   }
 
   async function postsDelete(event, list, id) {
-    await requireAdmin(event);
+    const actor = await actorOf(event);
     if (!POST_LISTS.has(list)) throw httpError(404, 'Unknown post list');
     if (!/^[0-9]+:[0-9a-f]+$/.test(id)) throw httpError(400, 'Invalid post id');
     const key = postKey(list, id);
     const existing = await readJson(admin, key);
     if (!existing) throw httpError(404, 'Post not found');
     await admin.delete(key);
-    const actor = await actorOf(event);
     await svc.audit('post.deleted', { list, id }, actor);
     return ok({ ok: true });
   }
@@ -410,26 +419,27 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
   // ------------------------------------------------------------- settings
 
   async function settingsGet(event) {
-    await requireAdmin(event);
+    await requireUser(event);
     const open = await svc.getOpen();
     const configured = await readJson(store, 'setting:defaultRate');
-    const defaultRate = isFiniteNumber(configured) && configured > 0
+    const defaultRate = isValidThbToMmkRate(configured)
       ? configured
-      : Number(getEnv('EXCHANGE_RATE_DEFAULT')) || undefined;
+      : isValidThbToMmkRate(Number(getEnv('EXCHANGE_RATE_DEFAULT')))
+        ? Number(getEnv('EXCHANGE_RATE_DEFAULT'))
+        : undefined;
     const rate = await svc.getRate();
     return ok({ open, defaultRate: defaultRate || rate.thbToMmk, currentRate: rate.thbToMmk });
   }
 
   async function settingsUpdate(event) {
-    await requireAdmin(event);
     const actor = await actorOf(event);
     const body = parseJsonBody(event);
     if (body.open !== undefined && typeof body.open !== 'boolean') {
       throw httpError(400, 'open must be a boolean');
     }
     if (body.defaultRate !== undefined) {
-      if (!isFiniteNumber(body.defaultRate) || body.defaultRate <= 0) {
-        throw httpError(400, 'defaultRate must be a positive number');
+      if (!isValidThbToMmkRate(body.defaultRate)) {
+        throw httpError(400, 'defaultRate must be between 50 and 500');
       }
       await store.set('setting:defaultRate', body.defaultRate);
       await svc.audit('settings.defaultRate', { thbToMmk: body.defaultRate }, actor);
@@ -445,7 +455,7 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
   // ------------------------------------------------------- unified audit
 
   async function adminAudit(event) {
-    await requireAdmin(event);
+    await requireUser(event);
     const q = event.queryStringParameters || {};
     const page = Math.max(1, parseInt(q.page || '1', 10));
     return ok(await svc.auditPage(admin, page));
@@ -492,10 +502,18 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
       next.saltHex = saltHex;
       next.hashHex = hashHex;
       next.passwordChangedAt = new Date().toISOString();
+      next.authVersion = authVersionOf(row) + 1;
     }
 
     await writeUser(next);
     await svc.audit('account.updated', { fields: Object.keys(body).filter((k) => k !== 'currentPassword') }, next.email);
+    if (body.newPassword !== undefined) {
+      await deleteAllRefreshSessions(admin, next.id || USER_ID);
+      return ok(
+        { ok: true, username: next.username, email: next.email, name: next.name, signedOut: true },
+        { 'Set-Cookie': clearRefreshCookie() },
+      );
+    }
     return ok({ ok: true, username: next.username, email: next.email, name: next.name });
   }
 
@@ -578,13 +596,16 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
 
       throw httpError(404, 'Not found');
     } catch (err) {
+      if (err instanceof RateLimiterError) {
+        const headers = err.retryAfter ? { 'Retry-After': String(err.retryAfter) } : undefined;
+        return fail(err.status, err.message, headers);
+      }
       if (err && err.status) return fail(err.status, err.message);
       if (err && err.code === 'TOO_LARGE') return fail(413, 'Request too large');
-      if (err instanceof Error) {
-        // Expected client-side input errors surface here; anything else is a bug.
+      if (err instanceof ValidationError || (err && ['INVALID_JSON', 'INVALID_BODY', 'UNSAFE_KEYS', 'INVALID_INPUT'].includes(err.code))) {
         return fail(400, err.message);
       }
-      console.error('admin: unhandled error', err);
+      console.error('admin: unhandled error', err && err.stack ? err.stack : err);
       return fail(500, 'Server error');
     }
   }
@@ -593,7 +614,26 @@ export function createAdminServer({ store, proofs, admin, env = {} } = {}) {
 }
 
 export const handler = async (event) => {
-  const { store, proofs, admin } = await openStores(event);
-  const server = createAdminServer({ store, proofs, admin });
-  return server.route(event);
+  try {
+    const { store, proofs, admin } = await openStores(event);
+    const testMode = process.env.SKY_EXCHANGE_TEST === '1';
+    if (!testMode) {
+      productionLimiterPromise = productionLimiterPromise || createProductionRateLimiter(process.env);
+    }
+    const server = createAdminServer({
+      store,
+      proofs,
+      admin,
+      env: process.env,
+      limiter: testMode ? createMemoryRateLimiter() : undefined,
+      limiterFactory: testMode ? undefined : () => productionLimiterPromise,
+    });
+    return await server.route(event);
+  } catch (err) {
+    if (err instanceof RateLimiterError) {
+      return fail(err.status, err.message);
+    }
+    console.error('admin: unavailable', err && err.message ? err.message : err);
+    return fail(503, 'Service temporarily unavailable');
+  }
 };

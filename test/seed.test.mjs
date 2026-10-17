@@ -48,9 +48,11 @@ test('the seed script writes a login-ready user:primary row', async () => {
   assert.notEqual(row.hashHex, 'hunter2-secret', 'the password is hashed, never stored raw');
   assert.equal(row.username, 'admin');
   assert.equal(row.email, 'contact@skycreation.dev');
-  assert.equal(row.failedAttempts, 0);
-  assert.equal(row.lockedUntil, null, 'a fresh seed starts unlocked');
+  assert.equal(row.authVersion, 0, 'a fresh seed starts at authVersion 0');
+  assert.equal(row.failedAttempts, undefined, 'lockout fields are no longer seeded');
+  assert.equal(row.lockedUntil, undefined);
   assert.ok(row.createdAt && row.updatedAt && row.passwordChangedAt);
+  assert.match(stdout, /session:/, 'reseed instructions mention clearing sessions');
 
   const { verifyStoredHash } = await import('../functions/exchange-lib/auth.mjs');
   assert.equal(

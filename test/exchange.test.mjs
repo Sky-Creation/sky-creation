@@ -28,7 +28,10 @@ import { JsonStore, readJson, readBinary } from '../functions/exchange-lib/store
 const here = dirname(fileURLToPath(import.meta.url));
 const m = join(here);
 
-const ENV = { EXCHANGE_JWT_SECRET: 'test-secret' };
+const ENV = {
+  EXCHANGE_JWT_SECRET: 'test-secret',
+  RATE_LIMIT_HMAC_KEY: 'test-only-rate-limit-key-that-is-never-deployed',
+};
 
 function newServer() {
   const store = new InMemoryStore();
@@ -41,7 +44,7 @@ function newServer() {
   };
 }
 
-function makeEvent({ method = 'GET', path = '/api/exchange/rates', body, ip = '203.0.113.9', query } = {}) {
+function makeEvent({ method = 'GET', path = '/api/exchange/rates', body, ip = '203.0.113.9', query, headers } = {}) {
   const [cleanPath, rawQuery] = String(path).split('?');
   const qs = query || Object.fromEntries(new URLSearchParams(rawQuery || '').entries());
   return {
@@ -49,8 +52,12 @@ function makeEvent({ method = 'GET', path = '/api/exchange/rates', body, ip = '2
     path: cleanPath,
     queryStringParameters: qs,
     body: typeof body === 'string' ? body : JSON.stringify(body ?? {}),
-    headers: { 'x-nf-client-connection-ip': ip },
+    headers: { 'x-nf-client-connection-ip': ip, ...(headers || {}) },
   };
+}
+
+function viewHeaders(token) {
+  return { 'x-view-token': token };
 }
 
 test('the module exposes a server factory and handler', async () => {
@@ -208,22 +215,33 @@ test('creating an order persists it and returns a view token', async () => {
   const view = JSON.parse(order.body);
   assert.equal(view.isRedacted, true, 'public view hides the details');
   assert.equal(view.senderName, undefined);
-  assert.equal(view.amount, 5000);
+  assert.equal(view.amount, undefined, 'status-only publicOrder omits amounts');
+  assert.equal(view.direction, undefined);
+  assert.equal(view.status, 'PENDING');
 });
 
-test('an order is only revealed in full with the view token', async () => {
+test('an order is only revealed in full with the X-View-Token header', async () => {
   const { server } = newServer();
   const created = JSON.parse(
     (await server.route(makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody() }))).body
   );
 
-  const full = await server.route(
+  const queryToken = await server.route(
     makeEvent({ path: `/api/exchange/orders/${created.orderId}?token=${created.viewToken}` })
+  );
+  assert.equal(JSON.parse(queryToken.body).isRedacted, true, 'query tokens are ignored');
+
+  const full = await server.route(
+    makeEvent({
+      path: `/api/exchange/orders/${created.orderId}`,
+      headers: viewHeaders(created.viewToken),
+    })
   );
   const view = JSON.parse(full.body);
   assert.equal(view.isRedacted, false);
   assert.equal(view.senderName, 'Aung Ko');
   assert.equal(view.senderContact, '+95012345678');
+  assert.equal(view.amount, 5000);
 });
 
 test('a wrong token is treated as no token, not an error that leaks the id', async () => {
@@ -232,13 +250,16 @@ test('a wrong token is treated as no token, not an error that leaks the id', asy
     (await server.route(makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody() }))).body
   );
   const res = await server.route(
-    makeEvent({ path: `/api/exchange/orders/${created.orderId}?token=${'0'.repeat(48)}` })
+    makeEvent({
+      path: `/api/exchange/orders/${created.orderId}`,
+      headers: viewHeaders('0'.repeat(48)),
+    })
   );
   assert.equal(res.statusCode, 200);
   assert.equal(JSON.parse(res.body).isRedacted, true);
 });
 
-test('order list resolver redacts and unredacts per entry', async () => {
+test('order list is always status-only even when a viewToken is supplied', async () => {
   const { server } = newServer();
   const created = JSON.parse(
     (await server.route(makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody() }))).body
@@ -259,7 +280,9 @@ test('order list resolver redacts and unredacts per entry', async () => {
   assert.equal(res.statusCode, 200);
   const rows = JSON.parse(res.body).orders;
   assert.equal(rows[0].isRedacted, true);
-  assert.equal(rows[1].isRedacted, false);
+  assert.equal(rows[0].amount, undefined);
+  assert.equal(rows[1].isRedacted, true, 'list never lifts redaction');
+  assert.equal(rows[1].amount, undefined);
   assert.equal(rows[2], null, 'unknown ids resolve to null');
 });
 
@@ -321,17 +344,25 @@ test('malformed JSON is a 400', async () => {
 test('repeated order creations from one IP are rate limited', async () => {
   const { server } = newServer();
   const event = makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody(), ip: '198.51.100.7' });
-  let limited = 0;
+  let limited = null;
   for (let i = 0; i < 12; i += 1) {
     const res = await server.route(event);
-    if (res.statusCode === 429) limited += 1;
+    if (res.statusCode === 429) {
+      limited = res;
+      break;
+    }
   }
-  assert.ok(limited >= 1, 'the create limit engages from the same IP');
+  assert.ok(limited, 'the create limit engages from the same IP');
+  const body = JSON.parse(limited.body);
+  assert.equal(body.ok, undefined);
+  assert.equal(body.discarded, undefined);
+  assert.match(body.error, /too many requests/i);
+  assert.ok(limited.headers['Retry-After'], 'Retry-After is set');
 });
 
 // ----------------------------------------------------------------- proofs
 
-test('proof upload and view roundtrip with the view token', async () => {
+test('proof upload and view roundtrip with the X-View-Token header', async () => {
   const { server } = newServer();
   const created = JSON.parse(
     (await server.route(makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody() }))).body
@@ -342,8 +373,8 @@ test('proof upload and view roundtrip with the view token', async () => {
     makeEvent({
       method: 'POST',
       path: `/api/exchange/orders/${created.orderId}/proof`,
+      headers: viewHeaders(created.viewToken),
       body: {
-        token: created.viewToken,
         mimeType: 'image/jpeg',
         fileName: 'slip.jpg',
         dataBase64: jpeg.toString('base64'),
@@ -353,7 +384,10 @@ test('proof upload and view roundtrip with the view token', async () => {
   assert.equal(upload.statusCode, 200);
 
   const view = await server.route(
-    makeEvent({ path: `/api/exchange/orders/${created.orderId}/proof?token=${created.viewToken}` })
+    makeEvent({
+      path: `/api/exchange/orders/${created.orderId}/proof`,
+      headers: viewHeaders(created.viewToken),
+    })
   );
   assert.equal(view.statusCode, 200);
   assert.equal(view.headers['Content-Type'], 'image/jpeg');
@@ -369,10 +403,29 @@ test('a proof upload without the right token is a 404', async () => {
     makeEvent({
       method: 'POST',
       path: `/api/exchange/orders/${created.orderId}/proof`,
-      body: { token: '0'.repeat(48), mimeType: 'image/jpeg', dataBase64: 'QUJD' },
+      headers: viewHeaders('0'.repeat(48)),
+      body: { mimeType: 'image/jpeg', dataBase64: 'QUJD' },
     })
   );
   assert.equal(res.statusCode, 404);
+});
+
+test('proof upload is refused once the order leaves PENDING', async () => {
+  const { server, svc } = newServer();
+  const created = JSON.parse(
+    (await server.route(makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody() }))).body
+  );
+  await svc.transition(created.orderId, 'approve', 'admin');
+  const res = await server.route(
+    makeEvent({
+      method: 'POST',
+      path: `/api/exchange/orders/${created.orderId}/proof`,
+      headers: viewHeaders(created.viewToken),
+      body: { mimeType: 'image/jpeg', dataBase64: Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString('base64') },
+    })
+  );
+  assert.equal(res.statusCode, 400);
+  assert.match(JSON.parse(res.body).error, /pending/i);
 });
 
 test('proof upload enforces the mime allowlist and size cap', async () => {
@@ -384,7 +437,8 @@ test('proof upload enforces the mime allowlist and size cap', async () => {
     makeEvent({
       method: 'POST',
       path: `/api/exchange/orders/${created.orderId}/proof`,
-      body: { token: created.viewToken, mimeType: 'text/html', dataBase64: 'QUJD' },
+      headers: viewHeaders(created.viewToken),
+      body: { mimeType: 'text/html', dataBase64: 'QUJD' },
     })
   );
   assert.equal(badMime.statusCode, 400);
@@ -393,7 +447,8 @@ test('proof upload enforces the mime allowlist and size cap', async () => {
     makeEvent({
       method: 'POST',
       path: `/api/exchange/orders/${created.orderId}/proof`,
-      body: { token: created.viewToken, mimeType: 'image/png', dataBase64: Buffer.alloc(5 * 1024 * 1024 + 1000).toString('base64') },
+      headers: viewHeaders(created.viewToken),
+      body: { mimeType: 'image/png', dataBase64: Buffer.alloc(5 * 1024 * 1024 + 1000).toString('base64') },
     })
   );
   assert.equal(tooBig.statusCode, 400, 'decoded size is what counts, and it is capped');

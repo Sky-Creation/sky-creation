@@ -94,8 +94,7 @@ async function main() {
     name,
     saltHex,
     hashHex,
-    failedAttempts: 0,
-    lockedUntil: null,
+    authVersion: 0,
     createdAt: now,
     updatedAt: now,
     passwordChangedAt: now,
@@ -106,6 +105,11 @@ async function main() {
   console.log('');
   console.log('push it to the SCI_ADMIN blob store (company site account):');
   console.log(`  netlify blobs:set SCI_ADMIN user:primary --input ${out}`);
+  console.log('');
+  console.log('After a reseed, delete existing refresh sessions so old cookies stop working:');
+  console.log('  netlify blobs:list SCI_ADMIN --prefix session:');
+  console.log('  netlify blobs:delete SCI_ADMIN session:<jti>   # for each session:* key');
+  console.log('  # Or bump authVersion on the user row (password change in /admin does this).');
   console.log('');
   console.log(`login with: username ${username} or email ${email}`);
 }

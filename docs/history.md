@@ -206,6 +206,14 @@ Final `dns-watch` result with both fixes: **13 pass, 0 warn, 0 fail, 3 info.**
 
 ---
 
+## Phase 10 — Exchange conditions hardening (2026-10-17)
+
+| Hash | Date | Why it mattered |
+| --- | --- | --- |
+| *(uncommitted)* | 2026-10-17 | Finish the exchange/admin/contact gate model: header-only `X-View-Token`, status-only `publicOrder`, shared Upstash rate limits (`RATE_LIMIT_HMAC_KEY` + fail closed), drop account lockout for per-IP login limits + `authVersion`, proof upload only while `PENDING`, `requireUser` on admin module routes, and align tests/docs. |
+
+---
+
 ## Where things stand
 
 At the end of Phase 8 the project is feature-complete for its current scope:

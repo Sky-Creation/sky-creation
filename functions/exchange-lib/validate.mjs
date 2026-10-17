@@ -13,6 +13,8 @@ import { createHash } from 'node:crypto';
 export const MAX_JSON_BODY_BYTES = 64 * 1024;
 export const MAX_PROOF_BODY_BYTES = 8 * 1024 * 1024;
 export const MAX_ORDER_AMOUNT = 10 ** 9;
+export const MIN_THB_TO_MMK_RATE = 50;
+export const MAX_THB_TO_MMK_RATE = 500;
 
 const MAX_SENDER_NAME = 120;
 const MAX_SENDER_CONTACT = 200;
@@ -36,6 +38,17 @@ export const ORDER_STATUSES = new Set([
 ]);
 
 const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+export class ValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.code = 'INVALID_INPUT';
+  }
+}
+
+export function isValidThbToMmkRate(value) {
+  return isFiniteNumber(value) && value >= MIN_THB_TO_MMK_RATE && value <= MAX_THB_TO_MMK_RATE;
+}
 
 /* Strip CR/LF/control characters (header-injection and markup bait), trim,
  * then truncate. Mirrors functions/contact.mjs's clean(). */
@@ -61,7 +74,7 @@ export function assertSafeKeys(payload, path = '$') {
     seen.add(value);
     for (const key of Object.keys(value)) {
       if (BLOCKED_KEYS.has(key)) {
-        throw new Error(`unsafe object key "${key}" at ${where}`);
+        throw new ValidationError(`unsafe object key "${key}" at ${where}`);
       }
       const next = value[key];
       if (next !== null && typeof next === 'object') {
@@ -81,7 +94,7 @@ export function parseJsonBody(event, maxBytes = MAX_JSON_BODY_BYTES) {
     : raw;
 
   if (Buffer.byteLength(text, 'utf8') > maxBytes) {
-    const err = new Error('Request body too large');
+    const err = new ValidationError('Request body too large');
     err.code = 'TOO_LARGE';
     throw err;
   }
@@ -90,13 +103,13 @@ export function parseJsonBody(event, maxBytes = MAX_JSON_BODY_BYTES) {
   try {
     body = text ? JSON.parse(text) : {};
   } catch {
-    const err = new Error('Invalid JSON body');
+    const err = new ValidationError('Invalid JSON body');
     err.code = 'INVALID_JSON';
     throw err;
   }
 
   if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-    const err = new Error('Body must be a JSON object');
+    const err = new ValidationError('Body must be a JSON object');
     err.code = 'INVALID_BODY';
     throw err;
   }
@@ -113,27 +126,27 @@ export function parseJsonBody(event, maxBytes = MAX_JSON_BODY_BYTES) {
 export function parseOrderInput(body) {
   const direction = cleanText(body.direction, 32).toUpperCase();
   if (!DIRECTIONS.has(direction)) {
-    throw new Error('direction must be one of: THB_TO_MMK, MMK_TO_THB');
+    throw new ValidationError('direction must be one of: THB_TO_MMK, MMK_TO_THB');
   }
 
   const amount = body.amount;
   if (!isFiniteNumber(amount) || amount <= 0 || amount > MAX_ORDER_AMOUNT) {
-    throw new Error('amount must be a finite number greater than zero');
+    throw new ValidationError('amount must be a finite number greater than zero');
   }
 
   const level = cleanText(body.level, 32);
   if (!LEVELS.has(level)) {
-    throw new Error('level is invalid');
+    throw new ValidationError('level is invalid');
   }
 
   const method = cleanText(body.method, MAX_METHOD);
-  if (!method) throw new Error('method is required');
-  if (method.length > MAX_METHOD) throw new Error('method is too long');
+  if (!method) throw new ValidationError('method is required');
+  if (method.length > MAX_METHOD) throw new ValidationError('method is too long');
 
   const senderName = cleanText(body.senderName, MAX_SENDER_NAME);
   const senderContact = cleanText(body.senderContact, MAX_SENDER_CONTACT);
   if (!senderName || !senderContact) {
-    throw new Error('senderName and senderContact are required');
+    throw new ValidationError('senderName and senderContact are required');
   }
 
   return {
@@ -155,8 +168,8 @@ export function parseOrderInput(body) {
 
 export function parseRateInput(body) {
   const rate = body.thbToMmk;
-  if (!isFiniteNumber(rate) || rate <= 0) {
-    throw new Error('thbToMmk must be a positive finite number');
+  if (!isValidThbToMmkRate(rate)) {
+    throw new ValidationError(`thbToMmk must be between ${MIN_THB_TO_MMK_RATE} and ${MAX_THB_TO_MMK_RATE}`);
   }
   return { thbToMmk: rate };
 }
@@ -166,55 +179,63 @@ export function parseRateInput(body) {
 export function parsePostInput(body) {
   const date = cleanText(body.date, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error('date must be a YYYY-MM-DD calendar date');
+    throw new ValidationError('date must be a YYYY-MM-DD calendar date');
   }
   const when = new Date(`${date}T00:00:00Z`);
   if (isNaN(when.getTime()) || when.toISOString().slice(0, 10) !== date) {
-    throw new Error('date is not a real calendar date');
+    throw new ValidationError('date is not a real calendar date');
   }
 
   const text = String(body.text ?? '')
     .replace(/\r\n/g, '\n')
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
     .trim();
-  if (!text) throw new Error('text is required');
-  if (text.length > MAX_POST_TEXT) throw new Error('text is too long');
+  if (!text) throw new ValidationError('text is required');
+  if (text.length > MAX_POST_TEXT) throw new ValidationError('text is too long');
 
   const url = cleanText(body.url, MAX_POST_URL);
   if (url && !/^https?:\/\/[^\s]+$/.test(url)) {
-    throw new Error('url must be an http(s) link');
+    throw new ValidationError('url must be an http(s) link');
   }
 
   return { date, text, url };
 }
 
-/* Read a proof payload: { token, mimeType, fileName?, dataBase64 }.
+/* Read a proof payload: { mimeType, fileName?, dataBase64 }.
  * The decoded size is what matters, so the base64 string is decoded before the
  * cap is compared against, not after. */
 export function parseProofInput(body) {
-  const token = cleanText(body.token, 128);
-  if (!token) throw new Error('token is required');
-
   const mimeType = cleanText(body.mimeType, 64).toLowerCase();
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
-    throw new Error('mimeType must be image/jpeg, image/png or image/webp');
+    throw new ValidationError('mimeType must be image/jpeg, image/png or image/webp');
   }
 
   const dataBase64 = typeof body.dataBase64 === 'string' ? body.dataBase64 : '';
-  if (!dataBase64) throw new Error('dataBase64 is required');
+  if (!dataBase64) throw new ValidationError('dataBase64 is required');
+
+  const encoded = dataBase64.replace(/^data:[^;]+;base64,/, '');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 !== 0) {
+    throw new ValidationError('dataBase64 is not valid base64');
+  }
 
   let buffer;
   try {
-    buffer = Buffer.from(dataBase64.replace(/^data:[^;]+;base64,/, ''), 'base64');
+    buffer = Buffer.from(encoded, 'base64');
   } catch {
-    throw new Error('dataBase64 is not valid base64');
+    throw new ValidationError('dataBase64 is not valid base64');
   }
   if (buffer.byteLength === 0 || buffer.byteLength > 5 * 1024 * 1024) {
-    throw new Error('proof must be between 1 byte and 5 MB');
+    throw new ValidationError('proof must be between 1 byte and 5 MB');
+  }
+
+  const isJpeg = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  const isPng = buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const isWebp = buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+  if ((mimeType === 'image/jpeg' && !isJpeg) || (mimeType === 'image/png' && !isPng) || (mimeType === 'image/webp' && !isWebp)) {
+    throw new ValidationError('proof bytes do not match the declared image type');
   }
 
   return {
-    token,
     mimeType,
     fileName: cleanText(body.fileName, 120),
     buffer,

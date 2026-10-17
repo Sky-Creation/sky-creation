@@ -15,9 +15,9 @@ tests or the DNS doctor locally.
 | `netlify-cli` | 27.x | manual deploys only (see [`deploy.md`](deploy.md)) |
 
 There is **no `npm install` step for tests.** CI never installs
-`@netlify/blobs`; the test suite stubs the blob store with `InMemoryStore`. The
-only reason `package.json` exists is that single dependency, which the exchange
-function imports lazily at runtime.
+`@netlify/blobs` or Upstash; the suite stubs Blobs with `InMemoryStore` and
+uses a memory rate limiter. Root `package.json` holds the function runtime deps
+(`@netlify/blobs`, `@upstash/redis`, `@upstash/ratelimit`) for deploy bundling.
 
 ## Clone and run the tests
 
@@ -25,17 +25,18 @@ function imports lazily at runtime.
 git clone <repo-url> sky-creation
 cd sky-creation
 
-# Node suite (103 tests)
+# Node suite (105 tests)
 node --test test/*.test.mjs
 
 # Python DNS parser suite (48 tests)
 python -m unittest discover -s infra
 ```
 
-No environment variable is needed: the suites build the functions with
-`createServer({ store: new InMemoryStore(), ... })`, so they never touch Netlify
-Blobs. `SKY_EXCHANGE_TEST=1` is the switch that makes `openStores()` — the path
-the real `handler` uses — return in-memory stores; set it only if you are
+No environment variable is needed for most cases: the suites build the functions
+with `createServer({ store: new InMemoryStore(), ... })`, so they never touch
+Netlify Blobs or Upstash. `SKY_EXCHANGE_TEST=1` is the switch that makes
+`openStores()` — the path the real `handler` uses — return in-memory stores and
+a memory limiter; set it only if you are
 exercising the handler end to end.
 
 Do **not** run `node --test test/` without the glob — Node treats the bare

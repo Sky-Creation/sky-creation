@@ -63,13 +63,12 @@ Free text is passed through `clean()`: CRLF and control characters are stripped
 
 ## Rate limit
 
-`RATE_LIMIT = { max: 5, windowMs: 10 * 60 * 1000 }` — five submissions per IP
-per ten minutes, held in a module-level `Map`. It is **per warm instance**, so
-across a fleet the effective limit is approximate. Over the limit returns `429`.
-The map is pruned when it grows past 5000 keys.
-
-`rateLimited()` legitimately calls `Date.now()`. That is the rate limiter
-working; it is not a timing gate. Do not remove it.
+Five submissions per IP per ten minutes via the shared
+`exchange-lib/rate-limit.mjs` helper (Upstash sliding window in production;
+in-memory under `SKY_EXCHANGE_TEST=1`). IPs are HMAC-hashed with
+`RATE_LIMIT_HMAC_KEY`. Over the limit returns
+`429 { error: "Too many requests. Try again later." }` with `Retry-After`.
+Missing Upstash or HMAC configuration fails closed (`503`).
 
 ## Response codes
 

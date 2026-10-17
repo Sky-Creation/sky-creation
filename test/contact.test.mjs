@@ -53,6 +53,9 @@ async function load({ provider = 'accept', key = 'test-key', to = 'contact@skycr
   };
   applyEnv('BREVO_API_KEY', key);
   applyEnv('CONTACT_TO', to);
+  // Contact handler uses Upstash in production; tests force the memory limiter.
+  applyEnv('SKY_EXCHANGE_TEST', '1');
+  applyEnv('RATE_LIMIT_HMAC_KEY', 'test-only-rate-limit-key-that-is-never-deployed');
 
   const restore = () => {
     globalThis.fetch = realFetch;
@@ -169,14 +172,19 @@ test('a non-POST request is refused', async () => {
 test('repeated submissions from one IP are rate limited', async () => {
   const { handler } = await load();
   const event = ok();
-  let limited = 0;
+  let limited = null;
 
   for (let i = 0; i < 8; i += 1) {
     const res = await handler(event);
-    if (res.statusCode === 429) limited += 1;
+    if (res.statusCode === 429) {
+      limited = res;
+      break;
+    }
   }
 
-  assert.ok(limited > 0, 'expected the per-IP limit to engage');
+  assert.ok(limited, 'expected the per-IP limit to engage');
+  assert.match(JSON.parse(limited.body).error, /too many requests/i);
+  assert.ok(limited.headers['Retry-After'], 'Retry-After is set');
 });
 
 test('the API key is never echoed into the email body', async () => {

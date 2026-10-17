@@ -126,7 +126,7 @@ The contact function is declared in the root `netlify.toml`
 Run these before pushing; CI runs the same commands.
 
 ```sh
-node --test test/*.test.mjs           # contact + exchange + admin + seed (103 tests)
+node --test test/*.test.mjs           # contact + exchange + admin + seed (105 tests)
 python3 -m unittest discover -s infra # DNS record parsers
 ```
 
@@ -156,31 +156,34 @@ Pages:
 Public API (see AGENTS.md for the full route list):
 
 ```sh
-GET  /api/exchange/rates     # current open state + thbToMmk + mmkToThb
-POST /api/exchange/calculate # convert an amount
-POST /api/exchange/orders    # start an order  -> id + view token
-GET  /api/exchange/orders    # guest list (redacted unless you hold the token)
-GET  /api/exchange/orders/{id}?token=...  # detail
-POST /api/exchange/orders/{id}/proof      # upload payment proof (JPEG/PNG/WebP)
+GET  /api/exchange/rates                 # current open state + thbToMmk + mmkToThb
+POST /api/exchange/calculate             # convert an amount
+POST /api/exchange/orders                # start an order -> id + view token
+POST /api/exchange/orders/list           # guest list (always status-only)
+GET  /api/exchange/orders/{id}           # detail; full with X-View-Token header
+POST /api/exchange/orders/{id}/proof     # upload proof (header token; PENDING only)
 ```
+
+Tracking links keep the token in `#token=`; the client sends `X-View-Token`.
 
 Data lives in Netlify Blobs (`SCI_EXCHANGE_ORDERS` / `SCI_EXCHANGE_PROOFS`).
 Deleting a blob store deletes the order history — treat "delete store" with the
 same care as `rm -rf`.
 
-Authorization model (matches sci-exchange): order *details* are only served to
-someone holding the per-order 48-hex `viewToken`; the admin panel signs in with
-a seeded scrypt-hashed account and holds a 15-minute HMAC access token
-afterwards (the refresh cookie is httpOnly and rotated on use). The honeypot
+Authorization model: order *details* are only served to someone holding the
+per-order 48-hex `viewToken` in the `X-View-Token` header; the admin panel
+signs in with a seeded scrypt-hashed account, holds a 15-minute HMAC access
+token in memory, and refreshes via an httpOnly rotating cookie. The honeypot
 `company` field is the only success-without-send path, exactly like the
 contact form. **Never show "sent" (or "converted") without a server answer** —
 re-adding a client-side fill-time gate is both useless and honestly worse than
 nothing, because bots see the same pages.
 
-The `@netlify/blobs` dependency is the only item in the root `package.json`.
-`deploy.yml` runs `npm install --no-audit --no-fund` before bundling, because
-netlify-cli's esbuild bundle will not install for it. CI test runs stub the
-blob store, so no `npm install` is needed there.
+Root `package.json` holds function runtime deps (`@netlify/blobs`,
+`@upstash/redis`, `@upstash/ratelimit`). `deploy.yml` runs
+`npm install --no-audit --no-fund` before bundling. CI test runs stub Blobs
+and use an in-memory rate limiter (`SKY_EXCHANGE_TEST=1`), so no `npm install`
+is needed there.
 
 ## Deploy
 

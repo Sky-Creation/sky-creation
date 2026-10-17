@@ -90,16 +90,18 @@ it from `/admin` → Exchange → Rates; the change is appended to
 ## A proof image will not display
 
 Proofs are JPEG/PNG/WebP up to 5 MB, stored in `SCI_EXCHANGE_PROOFS` and served
-through the function with the per-order view token. The admin panel previews
-them via a `blob:` URL, which is why the company CSP `img-src` includes `blob:`
-and `data:`. If the image 403s for a guest, the caller is missing the token —
-that is the redaction working, not a fault.
+through the function with the `X-View-Token` header. Upload is allowed only
+while the order is `PENDING`. The admin panel previews them via a `blob:` URL,
+which is why the company CSP `img-src` includes `blob:` and `data:`. A missing
+or wrong token returns **404** (not 403) — that is the redaction working, not a
+fault. Valid THB→MMK rates are in the band 50–500.
 
 ## Recover a lost token / wrong guest data
 
-Refresh the page to re-read the URL, or use the id + token link from the order
-confirmation. The token is a 48-hex string; without it the storefront returns
-the redacted `publicOrder` (id, status, timestamps only).
+Refresh the page to re-read the URL, or use the id + `#token=` link from the
+order confirmation. The token is a 48-hex string sent as `X-View-Token`; without
+it the storefront returns the redacted `publicOrder` (id, status, timestamps
+only).
 
 ## Tests fail in CI
 

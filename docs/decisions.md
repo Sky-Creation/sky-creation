@@ -87,24 +87,41 @@ Format: **Decision / Why / Rejected / Source.**
 
 ## Order redaction, with one admin exception
 
-- **Decision:** storefront listings and detail are `publicOrder` unless the
-  caller holds the 48-hex `viewToken`; the authenticated admin listing maps every
-  row through `fullOrder`.
+- **Decision:** storefront `publicOrder` is status-only (id, reference, status,
+  timestamps). Detail lifts to `fullOrder` only with the `X-View-Token` header.
+  List never accepts tokens. The authenticated admin listing maps every row
+  through `fullOrder`.
 - **Why:** the neighbour's obvious order id must not expose your amounts, email
-  or proof — but the panel exists precisely to show who sent what.
-- **Rejected:** a single projection; or redacting the admin list too.
+  or proof — but the panel exists precisely to show who sent what. Query/body
+  tokens were easy to leak via Referer and logs.
+- **Rejected:** a fat public projection; query-string tokens; unredacting list
+  entries with a body token.
 - **Source:** [`exchange.md`](exchange.md), [`admin.md`](admin.md).
 
 ## Admin auth: scrypt + short HMAC token + rotating refresh cookie
 
 - **Decision:** scrypt-hashed password seeded as `user:primary`; 15-minute HS256
-  access token; 7-day rotating httpOnly refresh cookie; 5-failure/15-minute
-  lockout; identical response for wrong identifier and wrong password.
-- **Why:** matches the `sci-exchange` model the app was ported from, and keeps
-  the free tier (no external auth service).
+  access token with `authVersion` (held in memory); 7-day rotating httpOnly
+  refresh cookie; per-IP login limit 5 / 15 min (no account lockout); identical
+  response for wrong identifier and wrong password.
+- **Why:** keeps the free tier (no external auth service). Account lockout let
+  a third party freeze the only administrator; IP rate limit + `authVersion`
+  session kill after password change is the replacement.
 - **Rejected:** a plaintext or env-var password compared at runtime; long-lived
-  access tokens.
+  access tokens; worker-side `failedAttempts` / `lockedUntil` lockout;
+  localStorage access tokens.
 - **Source:** `exchange-lib/auth.mjs`, `functions/admin.mjs`; [`admin.md`](admin.md).
+
+## Shared Upstash rate limiting
+
+- **Decision:** contact, order-create and admin-login share
+  `exchange-lib/rate-limit.mjs` (Upstash sliding window in production; memory
+  under `SKY_EXCHANGE_TEST`). IPs are HMAC-hashed with `RATE_LIMIT_HMAC_KEY`.
+  Missing config fails closed (`503`).
+- **Why:** per-instance `Map` counters were approximate across the Netlify
+  fleet (a live burst of 16 post-limit creates drew no `429`).
+- **Rejected:** keeping a module-level `Map`; failing open when Upstash is down.
+- **Source:** `functions/exchange-lib/rate-limit.mjs`.
 
 ## No CORS on the admin API
 

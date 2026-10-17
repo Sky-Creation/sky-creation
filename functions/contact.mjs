@@ -8,7 +8,7 @@
  * Optional:
  *   CONTACT_FROM    verified Brevo sender (defaults to CONTACT_TO)
  *
- * Anti-abuse: honeypot field, per-instance rate limit and a payload size cap.
+ * Anti-abuse: honeypot field, shared Upstash rate limit and a payload size cap.
  * None of these stop a determined attacker; they raise the cost enough that the
  * free tier is not trivially burnable.
  *
@@ -28,10 +28,15 @@ const MAX_MESSAGE = 4000;
 // message, and small enough that an oversized payload is refused before any
 // parsing or allocation happens.
 const MAX_BODY_BYTES = 16 * 1024;
-const RATE_LIMIT = { max: 5, windowMs: 10 * 60 * 1000 };
+import {
+  createMemoryRateLimiter,
+  createProductionRateLimiter,
+  enforceRateLimit,
+  resolveRateLimitHmacKey,
+  RateLimiterError,
+} from './exchange-lib/rate-limit.mjs';
 
-/** Per warm-instance memory, so limits are approximate across a fleet. */
-const submissions = new Map();
+const RATE_LIMIT = { max: 5, windowSeconds: 10 * 60 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -41,10 +46,10 @@ const CORS_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
 };
 
-function respond(statusCode, payload) {
+function respond(statusCode, payload, extraHeaders = {}) {
   return {
     statusCode,
-    headers: CORS_HEADERS,
+    headers: { ...CORS_HEADERS, ...extraHeaders },
     body: JSON.stringify(payload),
   };
 }
@@ -53,27 +58,6 @@ function clientIp(event) {
   const forwarded = event.headers?.['x-nf-client-connection-ip'];
   if (forwarded) return String(forwarded);
   return String(event.headers?.['x-forwarded-for'] || 'unknown').split(',')[0].trim();
-}
-
-function rateLimited(ip) {
-  const now = Date.now();
-  const hits = (submissions.get(ip) || []).filter((t) => now - t < RATE_LIMIT.windowMs);
-
-  if (hits.length >= RATE_LIMIT.max) {
-    submissions.set(ip, hits);
-    return true;
-  }
-
-  hits.push(now);
-  submissions.set(ip, hits);
-
-  // Keep the map from growing without bound on a long-lived instance.
-  if (submissions.size > 5000) {
-    for (const [key, times] of submissions) {
-      if (times.every((t) => now - t >= RATE_LIMIT.windowMs)) submissions.delete(key);
-    }
-  }
-  return false;
 }
 
 function escapeHtml(value) {
@@ -95,7 +79,14 @@ function clean(value, max) {
     .slice(0, max);
 }
 
-export const handler = async (event) => {
+export function createContactHandler({ env = process.env, limiter, allowTestDefault = false } = {}) {
+  const chosenLimiter = limiter || createMemoryRateLimiter();
+  // Memory-only path (no explicit production limiter) may use the test key;
+  // production always passes an Upstash limiter and requires RATE_LIMIT_HMAC_KEY.
+  const hmacKey = resolveRateLimitHmacKey(env, {
+    allowTestDefault: allowTestDefault || !limiter || String(env.SKY_EXCHANGE_TEST || '') === '1',
+  });
+  return async (event) => {
   if (event.httpMethod !== 'POST') {
     return respond(405, { error: 'Method not allowed' });
   }
@@ -110,14 +101,14 @@ export const handler = async (event) => {
     return respond(413, { error: 'Message too large. Please shorten it.' });
   }
 
-  const apiKey = process.env.BREVO_API_KEY;
+  const apiKey = env.BREVO_API_KEY;
   if (!apiKey) {
     console.error('BREVO_API_KEY is not configured');
     return respond(500, { error: 'Server is not configured' });
   }
 
-  const to = clean(process.env.CONTACT_TO || process.env.CONTACT_FROM, MAX_EMAIL);
-  const from = clean(process.env.CONTACT_FROM || to, MAX_EMAIL);
+  const to = clean(env.CONTACT_TO || env.CONTACT_FROM, MAX_EMAIL);
+  const from = clean(env.CONTACT_FROM || to, MAX_EMAIL);
   if (!to || !EMAIL_RE.test(to) || !EMAIL_RE.test(from)) {
     console.error('CONTACT_TO / CONTACT_FROM are missing or invalid');
     return respond(500, { error: 'Server is not configured' });
@@ -127,6 +118,9 @@ export const handler = async (event) => {
   try {
     body = JSON.parse(event.body || '{}');
   } catch {
+    return respond(400, { error: 'Invalid request' });
+  }
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
     return respond(400, { error: 'Invalid request' });
   }
 
@@ -148,8 +142,22 @@ export const handler = async (event) => {
     return respond(400, { error: 'Please provide a name, a valid email and a message.' });
   }
 
-  if (rateLimited(clientIp(event))) {
-    return respond(429, { error: 'Too many messages. Please try again later.' });
+  try {
+    await enforceRateLimit({
+      limiter: chosenLimiter,
+      namespace: 'contact',
+      ip: clientIp(event),
+      max: RATE_LIMIT.max,
+      windowSeconds: RATE_LIMIT.windowSeconds,
+      hmacKey,
+    });
+  } catch (err) {
+    if (err instanceof RateLimiterError) {
+      const headers = err.retryAfter ? { 'Retry-After': String(err.retryAfter) } : {};
+      return respond(err.status, { error: err.message }, headers);
+    }
+    console.error('contact: rate limiter failed', err && err.message ? err.message : err);
+    return respond(503, { error: 'Service temporarily unavailable' });
   }
 
   const payload = {
@@ -197,4 +205,31 @@ export const handler = async (event) => {
   }
 
   return respond(200, { ok: true });
+  };
+};
+
+let productionLimiter;
+let testLimiter;
+
+export const handler = async (event) => {
+  try {
+    if (process.env.SKY_EXCHANGE_TEST === '1') {
+      testLimiter = testLimiter || createMemoryRateLimiter();
+      return await createContactHandler({
+        env: process.env,
+        limiter: testLimiter,
+        allowTestDefault: true,
+      })(event);
+    }
+    productionLimiter = productionLimiter || createProductionRateLimiter(process.env);
+    const limiter = await productionLimiter;
+    return await createContactHandler({ env: process.env, limiter })(event);
+  } catch (err) {
+    if (err instanceof RateLimiterError) {
+      const headers = err.retryAfter ? { 'Retry-After': String(err.retryAfter) } : {};
+      return respond(err.status, { error: err.message }, headers);
+    }
+    console.error('contact: unavailable', err && err.message ? err.message : err);
+    return respond(503, { error: 'Service temporarily unavailable' });
+  }
 };

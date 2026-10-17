@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/styles.css?v=20261013-3">
+<link rel="stylesheet" href="/assets/styles.css?v=20261017-1">
 <style>
 /* Robust styling for SCI Exchange Converter */
 .converter-wrap {
@@ -220,27 +220,27 @@
 </header>
 
 <main id="main">
-  <section class="hero" style="text-align: center; padding-bottom: 2rem; margin-left: auto; margin-right: auto; max-width: var(--max);">
+  <section class="hero exchange-hero">
     <p class="eyebrow">SCI Exchange</p>
     <h1>Currency <span class="accent-word">Converter.</span></h1>
-    <p class="lede" style="margin-inline: auto; max-width: 48ch;">
+    <p class="lede exchange-lede">
       Convert between Thai Baht (THB) and Myanmar Kyat (MMK), then create an
       exchange order and track it to payout.
     </p>
-    <p style="margin-top: 0.5rem;">
+    <p class="exchange-track-link">
       <a class="btn btn-ghost" href="/orders">Track your existing order</a>
     </p>
   </section>
 
   <!-- Clean, Centered Converter Card -->
-  <section class="section" id="exchange-app" style="padding-top: 0; padding-bottom: 4rem; display: flex; justify-content: center;">
+  <section class="section exchange-app-section" id="exchange-app">
     <div class="converter-wrap">
       <div class="converter-card reveal">
         <div class="converter-header">
-          <span class="status-pill status-live" id="calc-status" style="margin-bottom: 0;">
+          <span class="status-pill status-live calc-status" id="calc-status">
             <span class="status-dot"></span> Live Rate
           </span>
-          <span id="calc-rate-display" style="font-weight: 700; color: var(--text); font-size: 0.9rem;">1 THB = 128.50 MMK</span>
+          <span id="calc-rate-display" class="calc-rate-display">1 THB = 128.50 MMK</span>
         </div>
 
         <!-- Send Field -->
@@ -279,21 +279,21 @@
             <div class="rate-edit-wrap">
               <span id="rate-static-label">1 THB = </span>
               <input type="number" id="calc-rate-input" class="rate-input-inline" value="128.50" step="any" min="1" inputmode="decimal" title="Manual Rate Input" aria-label="Manual Rate Input">
-              <span style="font-weight: 700; color: #212529;">MMK</span>
+              <span class="rate-unit">MMK</span>
               <button type="button" id="calc-reset-rate" class="btn-rate-mini" title="Reset to official rate">Reset</button>
             </div>
           </div>
           <div class="converter-meta-row">
             <span>Transfer Fee:</span>
-            <strong style="color: #198754;">0.00 (Zero Fee)</strong>
+            <strong class="fee-zero">0.00 (Zero Fee)</strong>
           </div>
         </div>
 
         <!-- Actions -->
         <div class="converter-actions">
-          <button type="button" class="btn btn-primary" id="slip-copy-btn" style="width: 100%;">Copy Conversion Details</button>
-          <button type="button" class="btn btn-ghost" id="link-share-btn" style="width: 100%;">Copy Customer Direct Link &#128279;</button>
-          <a class="btn btn-ghost" href="/contact" style="text-align: center; width: 100%;">Contact to Exchange &rarr;</a>
+          <button type="button" class="btn btn-primary converter-action" id="slip-copy-btn">Copy Conversion Details</button>
+          <button type="button" class="btn btn-ghost converter-action" id="link-share-btn">Copy Customer Direct Link &#128279;</button>
+          <a class="btn btn-ghost converter-action converter-contact" href="/contact">Contact to Exchange &rarr;</a>
         </div>
       </div>
     </div>
@@ -303,7 +303,7 @@
   <section class="section section-alt" id="order-section">
     <div class="order-wrap">
       <div class="card reveal">
-        <div class="section-head" style="text-align: left; margin-bottom: 1rem;">
+        <div class="section-head section-head-left section-head-order">
           <p class="eyebrow">Begin an exchange</p>
           <h2>Create an order</h2>
         </div>
@@ -382,7 +382,7 @@
         </form>
 
         <div class="card" id="order-created" hidden>
-          <div class="section-head" style="text-align: left; margin-bottom: 0.75rem;">
+          <div class="section-head section-head-left section-head-created">
             <p class="eyebrow">Order received</p>
             <h3>Your order <strong data-ref></strong></h3>
           </div>
@@ -440,7 +440,7 @@
 <button class="back-to-top" id="back-to-top" type="button" aria-label="Back to top" title="Back to top">&#8593;</button>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="/assets/main.js?v=20261013-3"></script>
-  <script src="/assets/exchange.js?v=20261013-3"></script>
+<script src="/assets/main.js?v=20261017-1"></script>
+  <script src="/assets/exchange.js?v=20261017-1"></script>
 </body>
 </html>

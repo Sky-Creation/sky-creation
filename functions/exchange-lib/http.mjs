@@ -24,8 +24,8 @@ export function ok(payload, extraHeaders) {
   return json(200, payload, extraHeaders);
 }
 
-export function fail(statusCode, message) {
-  return json(statusCode, { error: message });
+export function fail(statusCode, message, extraHeaders) {
+  return json(statusCode, { error: message }, extraHeaders);
 }
 
 /* An error the route() dispatch recognises: any Error with a .status becomes
