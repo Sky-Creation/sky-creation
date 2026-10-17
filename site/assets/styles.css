@@ -1869,6 +1869,53 @@ p:last-child {
   padding: 1.25rem;
 }
 
+.modal.admin-order-modal {
+  max-width: 560px;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.admin-token-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-token-row code {
+  word-break: break-all;
+  font-size: 0.85rem;
+}
+
+.admin-series {
+  list-style: none;
+  margin: 0.75rem 0 1.25rem;
+  padding: 0;
+}
+
+.admin-series-row {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.admin-series-bar-track {
+  background: var(--border);
+  border-radius: var(--radius-sm);
+  height: 0.65rem;
+  overflow: hidden;
+}
+
+.admin-series-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  min-width: 2px;
+}
+
 /* --- company-page layout helpers (kept out of inline HTML for CSP) --- */
 
 .person-initials-cover { object-fit: cover; }

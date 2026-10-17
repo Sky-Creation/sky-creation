@@ -222,13 +222,25 @@
 
   // -------------------------------------------------------------- dashboard
 
+  var dashFrom = '';
+  var dashTo = '';
+  var dashStatus = '';
+
+  function dashboardQuery() {
+    var parts = [];
+    if (dashFrom) parts.push('from=' + encodeURIComponent(dashFrom));
+    if (dashTo) parts.push('to=' + encodeURIComponent(dashTo));
+    if (dashStatus) parts.push('status=' + encodeURIComponent(dashStatus));
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+
   function loadDashboard() {
     var panel = panelFor('dashboard');
     if (!panel) return;
     panel.textContent = '';
     panel.appendChild(message('Loading...'));
 
-    apiAdmin('/api/admin/dashboard').then(function (result) {
+    apiAdmin('/api/admin/dashboard' + dashboardQuery()).then(function (result) {
       panel.textContent = '';
       if (!result.ok || !result.body) {
         panel.appendChild(message((result.body && result.body.error) || 'Could not load the dashboard.'));
@@ -236,12 +248,16 @@
       }
       var s = result.body.stats || {};
       var r = result.body.rate || {};
+
+      panel.appendChild(dashboardFilters());
+
       var cards = [
         ['Orders', fmt(s.total)],
         ['Pending', fmt(s.counts && s.counts.PENDING)],
         ['Approved', fmt(s.counts && s.counts.APPROVED)],
         ['Completed', fmt(s.counts && s.counts.COMPLETED)],
         ['Rejected', fmt(s.counts && s.counts.REJECTED)],
+        ['Total volume (MMK)', fmt(s.volume)],
         ['Pending volume (MMK)', fmt(s.pendingVolume)]
       ];
       var grid = document.createElement('div');
@@ -269,6 +285,9 @@
         panel.appendChild(rateLine);
       }
 
+      appendSeriesChart(panel, s.series || []);
+      appendRateHistory(panel, result.body.recentRateHistory);
+
       var posts = result.body.posts || {};
       var postsLine = document.createElement('p');
       postsLine.className = 'muted';
@@ -277,6 +296,115 @@
 
       appendAuditList(panel, result.body.recentAudit, 'Recent activity');
     });
+  }
+
+  function dashboardFilters() {
+    var row = document.createElement('div');
+    row.className = 'admin-actions-row';
+
+    var fromLabel = document.createElement('label');
+    fromLabel.className = 'muted';
+    fromLabel.textContent = 'From';
+    var fromInput = document.createElement('input');
+    fromInput.type = 'date';
+    fromInput.className = 'admin-filter';
+    fromInput.value = dashFrom;
+    fromLabel.appendChild(fromInput);
+
+    var toLabel = document.createElement('label');
+    toLabel.className = 'muted';
+    toLabel.textContent = 'To';
+    var toInput = document.createElement('input');
+    toInput.type = 'date';
+    toInput.className = 'admin-filter';
+    toInput.value = dashTo;
+    toLabel.appendChild(toInput);
+
+    var statusLabel = document.createElement('label');
+    statusLabel.className = 'muted';
+    statusLabel.textContent = 'Status';
+    var select = document.createElement('select');
+    select.className = 'admin-filter';
+    [['', 'All'], ['PENDING', 'Pending'], ['APPROVED', 'Approved'], ['COMPLETED', 'Completed'], ['REJECTED', 'Rejected']]
+      .forEach(function (opt) {
+        var o = document.createElement('option');
+        o.value = opt[0];
+        o.textContent = opt[1];
+        select.appendChild(o);
+      });
+    select.value = dashStatus;
+    statusLabel.appendChild(select);
+
+    var apply = document.createElement('button');
+    apply.type = 'button';
+    apply.className = 'btn btn-primary btn-sm';
+    apply.textContent = 'Apply';
+    apply.addEventListener('click', function () {
+      dashFrom = fromInput.value || '';
+      dashTo = toInput.value || '';
+      dashStatus = select.value || '';
+      loadDashboard();
+    });
+
+    row.appendChild(fromLabel);
+    row.appendChild(toLabel);
+    row.appendChild(statusLabel);
+    row.appendChild(apply);
+    return row;
+  }
+
+  function appendSeriesChart(container, series) {
+    var head = document.createElement('h3');
+    head.textContent = 'Daily volume';
+    container.appendChild(head);
+    if (!Array.isArray(series) || !series.length) {
+      container.appendChild(message('No orders in this range.'));
+      return;
+    }
+    var maxVol = 0;
+    series.forEach(function (row) {
+      if (row.volumeMmk > maxVol) maxVol = row.volumeMmk;
+    });
+    if (maxVol <= 0) maxVol = 1;
+
+    var list = document.createElement('ul');
+    list.className = 'admin-series';
+    series.forEach(function (row) {
+      var li = document.createElement('li');
+      li.className = 'admin-series-row';
+      var day = document.createElement('span');
+      day.className = 'muted';
+      day.textContent = row.day;
+      var track = document.createElement('div');
+      track.className = 'admin-series-bar-track';
+      var bar = document.createElement('div');
+      bar.className = 'admin-series-bar';
+      bar.setAttribute('style', 'width:' + Math.max(2, Math.round((row.volumeMmk / maxVol) * 100)) + '%');
+      track.appendChild(bar);
+      var meta = document.createElement('span');
+      meta.textContent = fmt(row.volumeMmk) + ' \u00b7 ' + fmt(row.count);
+      li.appendChild(day);
+      li.appendChild(track);
+      li.appendChild(meta);
+      list.appendChild(li);
+    });
+    container.appendChild(list);
+  }
+
+  function appendRateHistory(container, rows) {
+    if (!Array.isArray(rows) || !rows.length) return;
+    var head = document.createElement('h3');
+    head.textContent = 'Recent rate updates';
+    container.appendChild(head);
+    var list = document.createElement('ul');
+    list.className = 'admin-history';
+    rows.forEach(function (entry) {
+      var li = document.createElement('li');
+      li.textContent = dateLabel(entry.updatedAt) + ' \u2014 1 THB = ' + fmt(entry.thbToMmk) + ' MMK' +
+        (entry.actor ? ' (' + entry.actor + ')' : '');
+      list.appendChild(li);
+    });
+    container.appendChild(list);
   }
 
   function appendAuditList(container, rows, title) {
@@ -322,6 +450,8 @@
 
   var exchangeView = 'orders';
   var exchangeStatus = '';
+  var exchangeQuery = '';
+  var exchangePage = 1;
 
   function loadExchange() {
     var panel = panelFor('exchange');
@@ -354,9 +484,10 @@
 
     var filter = document.createElement('div');
     filter.className = 'admin-actions-row';
-    var label = document.createElement('label');
-    label.className = 'muted';
-    label.textContent = 'Status';
+
+    var statusLabel = document.createElement('label');
+    statusLabel.className = 'muted';
+    statusLabel.textContent = 'Status ';
     var select = document.createElement('select');
     select.className = 'admin-filter';
     [['', 'All'], ['PENDING', 'Pending'], ['APPROVED', 'Approved'], ['COMPLETED', 'Completed'], ['REJECTED', 'Rejected']]
@@ -367,23 +498,51 @@
         select.appendChild(o);
       });
     select.value = exchangeStatus;
-    label.appendChild(select);
+    statusLabel.appendChild(select);
+
+    var searchLabel = document.createElement('label');
+    searchLabel.className = 'muted';
+    searchLabel.textContent = 'Search ';
+    var search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'admin-filter';
+    search.placeholder = 'Reference, sender, method';
+    search.value = exchangeQuery;
+    searchLabel.appendChild(search);
+
+    var apply = document.createElement('button');
+    apply.type = 'button';
+    apply.className = 'btn btn-primary btn-sm';
+    apply.textContent = 'Apply';
+    apply.addEventListener('click', function () {
+      exchangeStatus = select.value;
+      exchangeQuery = String(search.value || '').trim();
+      exchangePage = 1;
+      loadExchange();
+    });
+
     var refresh = document.createElement('button');
     refresh.type = 'button';
     refresh.className = 'btn btn-ghost btn-sm';
     refresh.textContent = 'Refresh';
     refresh.addEventListener('click', function () { loadExchange(); });
-    filter.appendChild(label);
+
+    filter.appendChild(statusLabel);
+    filter.appendChild(searchLabel);
+    filter.appendChild(apply);
     filter.appendChild(refresh);
     container.appendChild(filter);
 
     select.addEventListener('change', function () {
       exchangeStatus = select.value;
+      exchangePage = 1;
       loadExchange();
     });
 
-    var query = exchangeStatus ? '?status=' + encodeURIComponent(exchangeStatus) + '&perPage=100' : '?perPage=100';
-    apiAdmin('/api/admin/exchange/orders' + query).then(function (result) {
+    var params = ['perPage=25', 'page=' + encodeURIComponent(String(exchangePage))];
+    if (exchangeStatus) params.push('status=' + encodeURIComponent(exchangeStatus));
+    if (exchangeQuery) params.push('q=' + encodeURIComponent(exchangeQuery));
+    apiAdmin('/api/admin/exchange/orders?' + params.join('&')).then(function (result) {
       container.textContent = '';
       container.appendChild(filter);
 
@@ -392,6 +551,11 @@
         return;
       }
       var rows = result.body.orders;
+      var total = Number(result.body.total) || 0;
+      var page = Number(result.body.page) || 1;
+      var perPage = Number(result.body.perPage) || 25;
+      var totalPages = Math.max(1, Math.ceil(total / perPage));
+
       if (!rows.length) {
         container.appendChild(message('No orders match.'));
         return;
@@ -399,6 +563,34 @@
       rows.forEach(function (order) {
         container.appendChild(orderRow(order));
       });
+
+      var pager = document.createElement('div');
+      pager.className = 'admin-actions-row';
+      var info = document.createElement('span');
+      info.className = 'muted';
+      info.textContent = 'Page ' + page + ' of ' + totalPages + ' \u00b7 ' + total + ' orders';
+      pager.appendChild(info);
+      var prev = document.createElement('button');
+      prev.type = 'button';
+      prev.className = 'btn btn-ghost btn-sm';
+      prev.textContent = 'Previous';
+      prev.disabled = page <= 1;
+      prev.addEventListener('click', function () {
+        exchangePage = Math.max(1, page - 1);
+        loadExchange();
+      });
+      var next = document.createElement('button');
+      next.type = 'button';
+      next.className = 'btn btn-ghost btn-sm';
+      next.textContent = 'Next';
+      next.disabled = page >= totalPages;
+      next.addEventListener('click', function () {
+        exchangePage = page + 1;
+        loadExchange();
+      });
+      pager.appendChild(prev);
+      pager.appendChild(next);
+      container.appendChild(pager);
     });
   }
 
@@ -429,6 +621,22 @@
 
     var actions = document.createElement('div');
     actions.className = 'ex-order-actions';
+
+    var viewBtn = document.createElement('button');
+    viewBtn.type = 'button';
+    viewBtn.className = 'btn btn-ghost';
+    viewBtn.textContent = 'View';
+    viewBtn.addEventListener('click', function () {
+      openOrderDetail(order.id);
+    });
+    actions.appendChild(viewBtn);
+
+    appendOrderActionButtons(actions, order, function () { loadExchange(); });
+    card.appendChild(actions);
+    return card;
+  }
+
+  function appendOrderActionButtons(actions, order, after) {
     var buttons = [];
     if (order.status === 'PENDING') {
       buttons.push(['Approve', 'approve', 'btn btn-primary']);
@@ -457,7 +665,7 @@
             } else {
               toast((spec[1] === 'delete' ? 'Deleted ' : 'Updated ') + (order.reference || order.id));
             }
-            loadExchange();
+            if (typeof after === 'function') after(spec[1], result);
           });
         };
         if (spec[1] === 'delete') {
@@ -470,8 +678,201 @@
       });
       actions.appendChild(btn);
     });
-    card.appendChild(actions);
-    return card;
+  }
+
+  var detailProofUrl = null;
+
+  function revokeDetailProof() {
+    if (detailProofUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+      URL.revokeObjectURL(detailProofUrl);
+    }
+    detailProofUrl = null;
+  }
+
+  var orderDetailKeyHandler = null;
+
+  function closeOrderDetailOverlay(overlay) {
+    if (orderDetailKeyHandler) {
+      document.removeEventListener('keydown', orderDetailKeyHandler);
+      orderDetailKeyHandler = null;
+    }
+    revokeDetailProof();
+    if (!overlay) return;
+    if (document.body && document.body.removeChild) document.body.removeChild(overlay);
+    else if (overlay.parentNode && overlay.parentNode.removeChild) overlay.parentNode.removeChild(overlay);
+  }
+
+  function openOrderDetail(orderId) {
+    apiAdmin('/api/admin/exchange/orders/' + encodeURIComponent(orderId)).then(function (result) {
+      if (!result.ok || !result.body) {
+        toast((result.body && result.body.error) || 'Could not load order');
+        return;
+      }
+      showOrderDetailModal(result.body);
+    });
+  }
+
+  function showOrderDetailModal(order) {
+    revokeDetailProof();
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.setAttribute('data-admin-order-detail', '1');
+    var box = document.createElement('div');
+    box.className = 'modal admin-order-modal';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+
+    var head = document.createElement('div');
+    head.className = 'ex-order-card-head';
+    var ref = document.createElement('strong');
+    ref.textContent = order.reference || order.id;
+    head.appendChild(ref);
+    head.appendChild(statusBadge(order.status));
+    box.appendChild(head);
+
+    var details = document.createElement('dl');
+    details.className = 'ex-details';
+    var pairs = [
+      ['Direction', directionOf(order.direction) + ' \u2192 ' + receiveOf(order.direction)],
+      ['Amount', fmt(order.amount) + ' ' + directionOf(order.direction)],
+      ['Receive', fmt(order.receiveAmount) + ' ' + receiveOf(order.direction)],
+      ['Rate', order.rateUsed ? rateSummary(order.rateUsed, order.direction) : '\u2014'],
+      ['Sender', order.senderName || '\u2014'],
+      ['Contact', order.senderContact || '\u2014'],
+      ['Account no.', order.accountNo || '\u2014'],
+      ['Account name', order.accountName || '\u2014'],
+      ['Note', order.note || '\u2014'],
+      ['Fee', order.fee != null ? fmt(order.fee) : '\u2014'],
+      ['Level', order.level || '\u2014'],
+      ['Method', order.method || '\u2014'],
+      ['Status', order.status || '\u2014'],
+      ['Created', dateLabel(order.createdAt) || '\u2014'],
+      ['Updated', dateLabel(order.updatedAt) || '\u2014'],
+      ['Completed', dateLabel(order.completedAt) || '\u2014'],
+      ['Has proof', order.hasProof ? 'Yes' : 'No'],
+      ['Proof file', order.proofFileName || '\u2014']
+    ];
+    pairs.forEach(function (pair) {
+      var dt = document.createElement('dt');
+      dt.textContent = pair[0];
+      var dd = document.createElement('dd');
+      dd.textContent = pair[1];
+      details.appendChild(dt);
+      details.appendChild(dd);
+    });
+
+    var tokenDt = document.createElement('dt');
+    tokenDt.textContent = 'View token';
+    var tokenDd = document.createElement('dd');
+    tokenDd.className = 'admin-token-row';
+    var tokenCode = document.createElement('code');
+    tokenCode.textContent = order.viewToken || '\u2014';
+    tokenDd.appendChild(tokenCode);
+    if (order.viewToken) {
+      var copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'btn btn-ghost btn-sm';
+      copyBtn.textContent = 'Copy';
+      copyBtn.addEventListener('click', function () {
+        copyText(order.viewToken);
+      });
+      tokenDd.appendChild(copyBtn);
+    }
+    details.appendChild(tokenDt);
+    details.appendChild(tokenDd);
+    box.appendChild(details);
+
+    if (order.hasProof && order.viewToken) {
+      var proofBox = document.createElement('div');
+      proofBox.className = 'ex-proof';
+      var proofTitle = document.createElement('h3');
+      proofTitle.textContent = 'Proof of payment';
+      proofBox.appendChild(proofTitle);
+      var img = document.createElement('img');
+      img.className = 'ex-proof-img';
+      img.alt = 'Proof of payment';
+      img.hidden = true;
+      proofBox.appendChild(img);
+      var proofStatus = document.createElement('p');
+      proofStatus.className = 'muted';
+      proofStatus.textContent = 'Loading proof...';
+      proofBox.appendChild(proofStatus);
+      box.appendChild(proofBox);
+
+      fetch('/api/exchange/orders/' + encodeURIComponent(order.id) + '/proof', {
+        headers: { 'X-View-Token': order.viewToken }
+      })
+        .then(function (resp) {
+          if (!resp.ok) throw new Error('nope');
+          return resp.blob();
+        })
+        .then(function (blob) {
+          revokeDetailProof();
+          detailProofUrl = URL.createObjectURL(blob);
+          img.src = detailProofUrl;
+          img.hidden = false;
+          proofStatus.textContent = '';
+        })
+        .catch(function () {
+          proofStatus.textContent = 'Could not load the proof image.';
+        });
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'ex-order-actions';
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn btn-ghost';
+    closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', function () {
+      closeOrderDetailOverlay(overlay);
+    });
+    actions.appendChild(closeBtn);
+    appendOrderActionButtons(actions, order, function (action) {
+      closeOrderDetailOverlay(overlay);
+      if (action === 'delete') loadExchange();
+      else loadExchange();
+    });
+    box.appendChild(actions);
+
+    overlay.appendChild(box);
+    overlay.addEventListener('click', function (event) {
+      if (event.target === overlay) closeOrderDetailOverlay(overlay);
+    });
+    if (orderDetailKeyHandler) document.removeEventListener('keydown', orderDetailKeyHandler);
+    orderDetailKeyHandler = function (event) {
+      if (event.key === 'Escape') closeOrderDetailOverlay(overlay);
+    };
+    document.addEventListener('keydown', orderDetailKeyHandler);
+    if (document.body && document.body.appendChild) document.body.appendChild(overlay);
+  }
+
+  function copyText(text) {
+    var done = function () { toast('Copied view token'); };
+    var fail = function () { toast('Could not copy'); };
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () {
+        fallbackCopy(text) ? done() : fail();
+      });
+      return;
+    }
+    if (fallbackCopy(text)) done();
+    else fail();
+  }
+
+  function fallbackCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      if (document.body && document.body.appendChild) document.body.appendChild(ta);
+      if (ta.select) ta.select();
+      var ok = typeof document.execCommand === 'function' && document.execCommand('copy');
+      if (document.body && document.body.removeChild) document.body.removeChild(ta);
+      else if (ta.parentNode && ta.parentNode.removeChild) ta.parentNode.removeChild(ta);
+      return Boolean(ok);
+    } catch (err) {
+      return false;
+    }
   }
 
   function statusBadge(status) {
@@ -803,7 +1204,7 @@
       var form = document.createElement('form');
       form.className = 'admin-rate-form';
 
-      var seedField = field('Default seed rate (used if the live rate is missing)', 'number', 'defaultRate');
+      var seedField = field('Default / live rate (also updates the live /exchange rate)', 'number', 'defaultRate');
       seedField.input.min = '50';
       seedField.input.max = '500';
       if (s.defaultRate) seedField.input.value = String(s.defaultRate);
@@ -849,6 +1250,9 @@
             } else {
               status.textContent = 'Saved.';
               status.setAttribute('data-state', 'success');
+              if (res.body && res.body.currentRate != null) {
+                current.textContent = 'Current live rate: 1 THB = ' + fmt(res.body.currentRate) + ' MMK';
+              }
             }
           })
           .finally(function () { save.disabled = false; });

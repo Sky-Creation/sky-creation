@@ -25,7 +25,7 @@ uses a memory rate limiter. Root `package.json` holds the function runtime deps
 git clone <repo-url> sky-creation
 cd sky-creation
 
-# Node suite (105 tests)
+# Node suite (113 tests)
 node --test test/*.test.mjs
 
 # Python DNS parser suite (48 tests)

@@ -18,11 +18,11 @@
  *   POST /api/admin/logout
  *   POST /api/admin/refresh
  *   GET  /api/admin/session      who am I
- *   GET  /api/admin/dashboard    stats, rate, recent audit, post counts
+ *   GET  /api/admin/dashboard?from&to&status    stats+series, rate, recent audit, posts
  *   GET  /api/admin/stats        (exchange, legacy alias)
  *   GET  /api/admin/orders...    (exchange, legacy alias)
  *   GET|POST /api/admin/rates    (exchange, legacy alias)
- *   GET  /api/admin/exchange/stats
+ *   GET  /api/admin/exchange/stats?from&to&status
  *   GET  /api/admin/exchange/orders?status&q&page&perPage
  *   GET  /api/admin/exchange/orders/:id
  *   POST /api/admin/exchange/orders/:id/approve|reject|complete|delete
@@ -32,8 +32,8 @@
  *   POST /api/admin/posts/:list                 create
  *   PUT  /api/admin/posts/:list/:id             update
  *   DELETE /api/admin/posts/:list/:id
- *   GET  /api/admin/settings                    { open, defaultRate }
- *   POST /api/admin/settings                    { open?, defaultRate? }
+ *   GET  /api/admin/settings                    { open, defaultRate, currentRate }
+ *   POST /api/admin/settings                    { open?, defaultRate? } -> also applies live rate
  *   PATCH /api/admin/account                    { currentPassword, ... }
  *   GET  /api/posts                             public, both lists
  *
@@ -270,10 +270,21 @@ export function createAdminServer({ store, proofs, admin, env = {}, limiter, lim
 
   // ------------------------------------------------------------ dashboard
 
+  function statsFiltersFrom(event) {
+    const q = event.queryStringParameters || {};
+    const status = q.status && ['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED'].includes(q.status)
+      ? q.status
+      : undefined;
+    const from = typeof q.from === 'string' && q.from.trim() ? q.from.trim() : undefined;
+    const to = typeof q.to === 'string' && q.to.trim() ? q.to.trim() : undefined;
+    return { from, to, status };
+  }
+
   async function adminDashboard(event) {
     await requireUser(event);
+    const filters = statsFiltersFrom(event);
     const [stats, rates, audit] = await Promise.all([
-      svc.adminStats(),
+      svc.adminStats(filters),
       svc.ratesGet(),
       svc.auditPage(admin, 1),
     ]);
@@ -284,6 +295,7 @@ export function createAdminServer({ store, proofs, admin, env = {}, limiter, lim
       recentRateHistory: (rates.history || []).slice(0, 5),
       recentAudit: audit.rows.slice(0, 5),
       posts: { company: company.length, math: math.length },
+      filters: stats.filters,
     });
   }
 
@@ -291,7 +303,7 @@ export function createAdminServer({ store, proofs, admin, env = {}, limiter, lim
 
   async function exchangeStats(event) {
     await requireUser(event);
-    return ok(await svc.adminStats());
+    return ok(await svc.adminStats(statsFiltersFrom(event)));
   }
 
   async function exchangeOrders(event) {
@@ -441,13 +453,26 @@ export function createAdminServer({ store, proofs, admin, env = {}, limiter, lim
       if (!isValidThbToMmkRate(body.defaultRate)) {
         throw httpError(400, 'defaultRate must be between 50 and 500');
       }
+      // Keep the seed for empty-store recovery, and also push it live so
+      // /exchange (which reads rate:current) picks the new value up.
       await store.set('setting:defaultRate', body.defaultRate);
       await svc.audit('settings.defaultRate', { thbToMmk: body.defaultRate }, actor);
     }
     const result = {};
-    if (body.open !== undefined) {
-      const applied = await svc.ratesApply({ open: body.open }, actor);
-      result.open = applied.open;
+    const applyBody = {};
+    if (body.defaultRate !== undefined) applyBody.thbToMmk = body.defaultRate;
+    if (body.open !== undefined) applyBody.open = body.open;
+    if (Object.keys(applyBody).length) {
+      const applied = await svc.ratesApply(applyBody, actor);
+      if (applied.open !== undefined) result.open = applied.open;
+      if (applied.thbToMmk !== undefined) {
+        result.defaultRate = body.defaultRate;
+        result.currentRate = applied.thbToMmk;
+      }
+    }
+    if (result.currentRate === undefined) {
+      const rate = await svc.getRate();
+      result.currentRate = rate.thbToMmk;
     }
     return ok({ ok: true, ...result });
   }
@@ -577,9 +602,9 @@ export function createAdminServer({ store, proofs, admin, env = {}, limiter, lim
       // ---- top-level admin with segments (legacy exchange order aliases,
       //      posts CRUD) ----------------------------------------------------
       if (seg[0] === 'orders') {
-        // Legacy aliases (pre-module paths): list, one order, transitions.
-        if (seg.length === 2 && method === 'GET') return await exchangeOrders(event);
-        if (seg.length === 3 && method === 'GET') return await exchangeOrder(event, seg[1]);
+        // Legacy aliases (pre-module paths): list is seg.length === 1 above;
+        // GET /api/admin/orders/:id is detail; POST .../:id/:action transitions.
+        if (seg.length === 2 && method === 'GET') return await exchangeOrder(event, seg[1]);
         if (
           seg.length === 3 &&
           method === 'POST' &&

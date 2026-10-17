@@ -9,7 +9,7 @@ panel, the contact form, the DNS parsers or the seed script.
 ## Commands (exactly what CI runs)
 
 ```sh
-# Node — 105 tests
+# Node — 113 tests
 node --test test/*.test.mjs
 
 # Python — 48 tests
@@ -33,10 +33,10 @@ python -m unittest discover -s infra
 | --- | --- | --- |
 | `main.test.mjs` | Contact form and posts rendering, client side | 14 |
 | `contact.test.mjs` | Contact form, server side | 14 |
-| `exchange.test.mjs` | Exchange storefront, server side | 25 |
-| `exchange-client.test.mjs` | Exchange storefront, client side (VM fake DOM) | 9 |
-| `admin.test.mjs` | Admin function, server side (seeded scrypt user; login/sessions/modules/audit) | 28 |
-| `admin-client.test.mjs` | Admin panel, client side (VM fake DOM) | 10 |
+| `exchange.test.mjs` | Exchange storefront, server side | 26 |
+| `exchange-client.test.mjs` | Exchange storefront, client side (VM fake DOM) | 10 |
+| `admin.test.mjs` | Admin function, server side (seeded scrypt user; login/sessions/modules/audit) | 32 |
+| `admin-client.test.mjs` | Admin panel, client side (VM fake DOM) | 14 |
 | `seed.test.mjs` | `scripts/seed-admin.mjs` | 3 |
 
 ### Server-side tests

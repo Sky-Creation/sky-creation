@@ -103,7 +103,7 @@ actually happened: `/test/*.test.mjs` and `/functions/contact.mjs` served 200 on
 
 ```sh
 # Tests - CI runs exactly these
-node --test test/*.test.mjs             # 105 tests (14 main + 14 contact + 26 exchange server + 10 exchange client + 28 admin server + 10 admin client + 3 seed)
+node --test test/*.test.mjs             # 113 tests (14 main + 14 contact + 26 exchange server + 10 exchange client + 32 admin server + 14 admin client + 3 seed)
 python3 -m unittest discover -s infra   # 48 tests
 
 # Deploy happens automatically on every push to main (both sites; deploy.yml).
@@ -450,9 +450,9 @@ been confirmed to appear in logs. Worth checking in the Netlify dashboard.
 
 ## 8. Verified state at handoff
 
-- 105 Node tests, 48 Python tests passing (the admin split is home; posts are
+- 113 Node tests, 48 Python tests passing (the admin split is home; posts are
   now read from `/api/posts` with `assets/posts.js` as fallback; rate limits
-  and view tokens use the hardened model in §4)
+  and view tokens use the hardened model in §4; dashboard volume is MMK-normalised)
 - Site-wide admin panel live on `skycreation.dev`: seeded login (200 + JWT),
   `/api/posts` → `{"company":[],"math":[]}`, admin order list full (`senderName`,
   `isRedacted:false`) while the guest list stays redacted, delete works, CSP

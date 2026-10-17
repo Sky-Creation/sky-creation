@@ -242,26 +242,94 @@ export function createOrderStore({ store, proofs: _proofs, auditStore, env = {} 
     return { orders: rows, total: matched.length, page: offset / wanted + 1, perPage: wanted };
   }
 
-  async function adminStats() {
+  /* Parse a from/to bound. Bare YYYY-MM-DD is treated as the UTC start (from)
+   * or end (to) of that day so a date-picker range is inclusive. */
+  function parseDayBound(value, endOfDay) {
+    if (!value || typeof value !== 'string') return NaN;
+    const trimmed = value.trim();
+    if (!trimmed) return NaN;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return Date.parse(trimmed + (endOfDay ? 'T23:59:59.999Z' : 'T00:00:00.000Z'));
+    }
+    return Date.parse(trimmed);
+  }
+
+  /* Dashboard volume is always MMK. THB_TO_MMK receiveAmount is MMK; MMK_TO_THB
+   * receiveAmount is THB, so use the MMK send amount instead. */
+  function orderVolumeMmk(order) {
+    if (!order) return 0;
+    if (order.direction === 'THB_TO_MMK' && isFiniteNumber(order.receiveAmount)) {
+      return order.receiveAmount;
+    }
+    if (order.direction === 'MMK_TO_THB' && isFiniteNumber(order.amount)) {
+      return order.amount;
+    }
+    return 0;
+  }
+
+  async function adminStats(opts = {}) {
+    const fromMs = parseDayBound(opts.from, false);
+    const toMs = parseDayBound(opts.to, true);
+    const statusFilter = opts.status && ORDER_STATUSES.has(opts.status) ? opts.status : undefined;
+
     const ids = await orderIds();
     const counts = { PENDING: 0, APPROVED: 0, COMPLETED: 0, REJECTED: 0 };
     let volume = 0;
     let pendingVolume = 0;
+    let total = 0;
+    const seriesMap = new Map();
+
     for (const id of ids) {
       const order = await readOrder(id);
       if (!order) continue;
+
+      const createdMs = Date.parse(order.createdAt);
+      if (Number.isFinite(fromMs) && (!Number.isFinite(createdMs) || createdMs < fromMs)) continue;
+      if (Number.isFinite(toMs) && (!Number.isFinite(createdMs) || createdMs > toMs)) continue;
+      if (statusFilter && order.status !== statusFilter) continue;
+
+      total += 1;
       counts[order.status] = (counts[order.status] || 0) + 1;
-      if (isFiniteNumber(order.receiveAmount)) {
-        volume += order.receiveAmount;
-        if (order.status === 'PENDING') pendingVolume += order.receiveAmount;
+      const mmk = orderVolumeMmk(order);
+      if (mmk > 0) {
+        volume += mmk;
+        if (order.status === 'PENDING') pendingVolume += mmk;
       }
+
+      const day = Number.isFinite(createdMs)
+        ? new Date(createdMs).toISOString().slice(0, 10)
+        : 'unknown';
+      let bucket = seriesMap.get(day);
+      if (!bucket) {
+        bucket = {
+          day,
+          count: 0,
+          volumeMmk: 0,
+          byStatus: { PENDING: 0, APPROVED: 0, COMPLETED: 0, REJECTED: 0 },
+        };
+        seriesMap.set(day, bucket);
+      }
+      bucket.count += 1;
+      if (mmk > 0) bucket.volumeMmk += mmk;
+      bucket.byStatus[order.status] = (bucket.byStatus[order.status] || 0) + 1;
     }
+
+    const series = Array.from(seriesMap.values()).sort((a, b) => (
+      a.day < b.day ? -1 : a.day > b.day ? 1 : 0
+    ));
+
     return {
-      total: ids.length,
+      total,
       counts,
       volume,
       pendingVolume,
       currency: 'MMK',
+      series,
+      filters: {
+        from: opts.from || null,
+        to: opts.to || null,
+        status: statusFilter || null,
+      },
     };
   }
 
@@ -350,7 +418,7 @@ export function createOrderStore({ store, proofs: _proofs, auditStore, env = {} 
       // Append-only history: new key, listed by prefix when read back.
       await store.set(`rate:history:${Date.now()}:${randomBytes(3).toString('hex')}`, {
         ...next,
-        actor: 'admin',
+        actor: actor || 'admin',
       });
       await audit('rate.updated', { source: 'admin' }, actor);
       result.thbToMmk = next.thbToMmk;

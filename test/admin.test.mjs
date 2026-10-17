@@ -35,11 +35,21 @@ const PASS = 'hunter2';
 const EMAIL = 'contact@skycreation.dev';
 const USERNAME = 'admin';
 
-function makeEvent({ method = 'GET', path = '/api/admin/dashboard', body, ip = '203.0.113.9', headers } = {}) {
+function makeEvent({ method = 'GET', path = '/api/admin/dashboard', body, ip = '203.0.113.9', headers, query } = {}) {
+  const qs = { ...(query || {}) };
+  const qIdx = path.indexOf('?');
+  if (qIdx !== -1) {
+    path.slice(qIdx + 1).split('&').forEach((pair) => {
+      if (!pair) return;
+      const [k, v] = pair.split('=');
+      if (k) qs[decodeURIComponent(k)] = decodeURIComponent(v || '');
+    });
+    path = path.slice(0, qIdx);
+  }
   return {
     httpMethod: method,
     path,
-    queryStringParameters: {},
+    queryStringParameters: qs,
     body: typeof body === 'string' ? body : JSON.stringify(body ?? {}),
     headers: { 'x-nf-client-connection-ip': ip, ...(headers || {}) },
   };
@@ -305,7 +315,11 @@ test('the exchange module walks an order to completion over the canonical paths'
   const detail = await ctx.server.route(
     makeEvent({ path: `/api/admin/exchange/orders/${created.orderId}`, headers: bearer(token) })
   );
-  assert.equal(JSON.parse(detail.body).senderName, 'Aung Ko', 'the admin sees the full order');
+  const detailBody = JSON.parse(detail.body);
+  assert.equal(detailBody.senderName, 'Aung Ko', 'the admin sees the full order');
+  assert.equal(detailBody.viewToken, created.viewToken, 'detail includes the per-order viewToken');
+  assert.equal(typeof detailBody.viewToken, 'string');
+  assert.match(detailBody.viewToken, /^[0-9a-f]{48}$/);
 
   const approve = await ctx.server.route(
     makeEvent({ method: 'POST', path: `/api/admin/exchange/orders/${created.orderId}/approve`, headers: bearer(token) })
@@ -389,6 +403,17 @@ test('legacy admin aliases still route to the exchange module', async () => {
   const orders = await ctx.server.route(makeEvent({ path: '/api/admin/orders', headers: bearer(token) }));
   assert.equal(JSON.parse(orders.body).orders.length, 1);
 
+  // GET /api/admin/orders/:id is detail (not a second list call).
+  const detail = await ctx.server.route(
+    makeEvent({ path: `/api/admin/orders/${created.orderId}`, headers: bearer(token) })
+  );
+  assert.equal(detail.statusCode, 200);
+  const detailBody = JSON.parse(detail.body);
+  assert.equal(detailBody.id, created.orderId);
+  assert.equal(detailBody.senderName, 'Aung Ko');
+  assert.ok(detailBody.viewToken, 'legacy detail returns the full order');
+  assert.equal(detailBody.orders, undefined, 'legacy detail is not a list payload');
+
   const approve = await ctx.server.route(
     makeEvent({ method: 'POST', path: `/api/admin/orders/${created.orderId}/approve`, headers: bearer(token) })
   );
@@ -440,10 +465,155 @@ test('the dashboard bundles stats, rate, recent audit and post counts', async ()
   assert.equal(res.statusCode, 200);
   const body = JSON.parse(res.body);
   assert.deepEqual(body.stats.counts, { PENDING: 0, APPROVED: 0, COMPLETED: 0, REJECTED: 0 });
+  assert.ok(Array.isArray(body.stats.series));
+  assert.deepEqual(body.stats.filters, { from: null, to: null, status: null });
   assert.ok(body.rate.thbToMmk > 0);
   assert.equal(body.rate.open, true);
   assert.ok(Array.isArray(body.recentAudit));
   assert.deepEqual(body.posts, { company: 0, math: 0 });
+});
+
+test('dashboard and stats honour from/to/status filters and build a day series', async () => {
+  const ctx = await newAdmin();
+  const token = JSON.parse((await login(ctx)).body).accessToken;
+  const created = JSON.parse(
+    (await ctx.publicServer.route(
+      makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody() })
+    )).body
+  );
+  const order = await ctx.store.get(`order:${created.orderId}`);
+  assert.ok(order && order.createdAt);
+
+  const day = order.createdAt.slice(0, 10);
+  const filtered = await ctx.server.route(
+    makeEvent({
+      path: '/api/admin/dashboard',
+      query: { from: day, to: day, status: 'PENDING' },
+      headers: bearer(token),
+    })
+  );
+  assert.equal(filtered.statusCode, 200);
+  const body = JSON.parse(filtered.body);
+  assert.equal(body.stats.total, 1);
+  assert.equal(body.stats.counts.PENDING, 1);
+  assert.equal(body.filters.status, 'PENDING');
+  assert.equal(body.filters.from, day);
+  assert.ok(body.stats.series.length >= 1);
+  assert.equal(body.stats.series[0].day, day);
+  assert.equal(body.stats.series[0].count, 1);
+  assert.ok(body.stats.series[0].volumeMmk > 0);
+
+  const empty = await ctx.server.route(
+    makeEvent({
+      path: '/api/admin/exchange/stats',
+      query: { from: '2000-01-01', to: '2000-01-02', status: 'COMPLETED' },
+      headers: bearer(token),
+    })
+  );
+  assert.equal(JSON.parse(empty.body).total, 0);
+  assert.deepEqual(JSON.parse(empty.body).series, []);
+});
+
+test('dashboard volume normalises both directions to MMK', async () => {
+  const ctx = await newAdmin();
+  const token = JSON.parse((await login(ctx)).body).accessToken;
+
+  const thb = JSON.parse(
+    (
+      await ctx.publicServer.route(
+        makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody({ amount: 1000 }) })
+      )
+    ).body
+  );
+  const mmk = JSON.parse(
+    (
+      await ctx.publicServer.route(
+        makeEvent({
+          method: 'POST',
+          path: '/api/exchange/orders',
+          body: orderBody({
+            direction: 'MMK_TO_THB',
+            amount: 200000,
+            senderName: 'Mya',
+            accountNo: '7654321',
+          }),
+        })
+      )
+    ).body
+  );
+
+  const thbOrder = await ctx.store.get(`order:${thb.orderId}`);
+  const mmkOrder = await ctx.store.get(`order:${mmk.orderId}`);
+  assert.equal(thbOrder.direction, 'THB_TO_MMK');
+  assert.equal(mmkOrder.direction, 'MMK_TO_THB');
+
+  // Wrong behaviour would sum THB receive into MMK volume.
+  const expected = thbOrder.receiveAmount + mmkOrder.amount;
+  const wrongMix = thbOrder.receiveAmount + mmkOrder.receiveAmount;
+  assert.notEqual(expected, wrongMix, 'fixture must expose the currency mix bug');
+
+  const res = await ctx.server.route(makeEvent({ path: '/api/admin/exchange/stats', headers: bearer(token) }));
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.total, 2);
+  assert.equal(body.volume, expected);
+  assert.equal(body.pendingVolume, expected);
+  const seriesVol = body.series.reduce((sum, row) => sum + row.volumeMmk, 0);
+  assert.equal(seriesVol, expected);
+});
+
+test('admin order list accepts q and pages results', async () => {
+  const ctx = await newAdmin();
+  const token = JSON.parse((await login(ctx)).body).accessToken;
+  await ctx.publicServer.route(
+    makeEvent({ method: 'POST', path: '/api/exchange/orders', body: orderBody({ senderName: 'Alpha One' }) })
+  );
+  await ctx.publicServer.route(
+    makeEvent({
+      method: 'POST',
+      path: '/api/exchange/orders',
+      body: orderBody({ senderName: 'Beta Two', accountNo: '9999999' }),
+    })
+  );
+
+  const hit = await ctx.server.route(
+    makeEvent({ path: '/api/admin/exchange/orders', query: { q: 'beta' }, headers: bearer(token) })
+  );
+  assert.equal(hit.statusCode, 200);
+  const hitBody = JSON.parse(hit.body);
+  assert.equal(hitBody.total, 1);
+  assert.equal(hitBody.orders[0].senderName, 'Beta Two');
+
+  const page1 = await ctx.server.route(
+    makeEvent({ path: '/api/admin/exchange/orders', query: { perPage: '1', page: '1' }, headers: bearer(token) })
+  );
+  const page2 = await ctx.server.route(
+    makeEvent({ path: '/api/admin/exchange/orders', query: { perPage: '1', page: '2' }, headers: bearer(token) })
+  );
+  assert.equal(JSON.parse(page1.body).orders.length, 1);
+  assert.equal(JSON.parse(page2.body).orders.length, 1);
+  assert.equal(JSON.parse(page1.body).total, 2);
+  assert.notEqual(JSON.parse(page1.body).orders[0].id, JSON.parse(page2.body).orders[0].id);
+});
+
+test('rate history records the acting admin identifier', async () => {
+  const ctx = await newAdmin();
+  const token = JSON.parse((await login(ctx)).body).accessToken;
+  const applied = await ctx.server.route(
+    makeEvent({
+      method: 'POST',
+      path: '/api/admin/exchange/rates',
+      body: { thbToMmk: 140.5 },
+      headers: bearer(token),
+    })
+  );
+  assert.equal(applied.statusCode, 200);
+
+  const rates = await ctx.server.route(makeEvent({ path: '/api/admin/exchange/rates', headers: bearer(token) }));
+  const history = JSON.parse(rates.body).history;
+  assert.ok(history.length >= 1);
+  assert.equal(history[0].thbToMmk, 140.5);
+  assert.equal(history[0].actor, EMAIL);
 });
 
 // ------------------------------------------------------------------ posts
@@ -557,11 +727,18 @@ test('settings reads and writes open state and the default seed rate', async () 
     makeEvent({ method: 'POST', path: '/api/admin/settings', body: { defaultRate: 133 }, headers: bearer(token) })
   );
   assert.equal(seed.statusCode, 200);
+  const seedBody = JSON.parse(seed.body);
+  assert.equal(seedBody.defaultRate, 133);
+  assert.equal(seedBody.currentRate, 133, 'settings POST echoes the live rate it just applied');
 
   const get2 = await ctx.server.route(makeEvent({ path: '/api/admin/settings', headers: bearer(token) }));
   const after = JSON.parse(get2.body);
   assert.equal(after.open, false);
   assert.equal(after.defaultRate, 133);
+  assert.equal(after.currentRate, 133);
+
+  const pub = await ctx.publicServer.route(makeEvent({ path: '/api/exchange/rates' }));
+  assert.equal(JSON.parse(pub.body).thbToMmk, 133, 'settings defaultRate also updates the live public rate');
 });
 
 test('invalid settings input is refused', async () => {

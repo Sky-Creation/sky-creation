@@ -126,7 +126,7 @@ The contact function is declared in the root `netlify.toml`
 Run these before pushing; CI runs the same commands.
 
 ```sh
-node --test test/*.test.mjs           # contact + exchange + admin + seed (105 tests)
+node --test test/*.test.mjs           # contact + exchange + admin + seed (113 tests)
 python3 -m unittest discover -s infra # DNS record parsers
 ```
 

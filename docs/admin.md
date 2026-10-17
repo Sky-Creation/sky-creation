@@ -49,8 +49,8 @@ All under `functions/admin.mjs`, rewritten from `/api/admin/*`, plus the public
 
 | Method | Path | Module |
 | --- | --- | --- |
-| `GET` | `/api/admin/dashboard` | stats, rate, recent rate history, recent audit, post counts |
-| `GET` | `/api/admin/exchange/stats` | exchange counts/volume |
+| `GET` | `/api/admin/dashboard?from&to&status` | stats (filterable), day `series`, rate, recent rate history, recent audit, post counts |
+| `GET` | `/api/admin/exchange/stats?from&to&status` | exchange counts/volume + day `series` |
 | `GET` | `/api/admin/exchange/orders?status&q&page&perPage` | order list (paged, max 50/page, newest first) |
 | `GET` | `/api/admin/exchange/orders/:id` | one full order **including** `viewToken` |
 | `POST` | `/api/admin/exchange/orders/:id/approve\|reject\|complete\|delete` | transitions |
@@ -116,9 +116,33 @@ working API is authoritative.
 
 - `open` — toggles the exchange; applied through `ratesApply()` so it audits as
   `exchange.state`. The rates form may POST `{ open }` alone (empty rate field).
-- `defaultRate` — stored at `setting:defaultRate`; the seed value `getRate()`
-  uses when `rate:current` is unset (audited as `settings.defaultRate`).
-  Valid band 50–500.
+- `defaultRate` — stored at `setting:defaultRate` (seed for empty-store
+  recovery) **and** applied live via `ratesApply({ thbToMmk })`, so
+  `/exchange` (which reads `rate:current`) updates immediately. Audited as
+  both `settings.defaultRate` and `rate.updated`. Valid band 50–500. The
+  settings POST echoes `currentRate` so the panel can refresh the live label.
+
+## Order detail + proof
+
+The Exchange orders list has a **View** action that loads
+`GET /api/admin/exchange/orders/:id` (full order + `viewToken`). The modal
+shows the full field set and a **Copy** control for the view token. Proof
+images reuse the public storefront route
+`GET /api/exchange/orders/:id/proof` with `X-View-Token` from that detail
+response (no separate admin proof endpoint).
+
+## Dashboard filters
+
+`adminStats` (and therefore `/api/admin/dashboard` and
+`/api/admin/exchange/stats`) accept optional `from` / `to` (ISO or
+`YYYY-MM-DD`, UTC-day inclusive) and `status`. The response includes a
+`series` of UTC day buckets `{ day, count, volumeMmk, byStatus }` plus the
+echoed `filters`. Volume is always MMK: `THB_TO_MMK` uses `receiveAmount`,
+`MMK_TO_THB` uses the MMK `amount` (never the THB receive).
+
+The Exchange orders list UI supports status filter, `q` search (reference /
+sender / method) and Previous/Next paging (`perPage=25`). Order detail closes
+on overlay click or Escape.
 
 ## The redaction exception
 
